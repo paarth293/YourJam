@@ -251,9 +251,15 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('reaction', ({ roomId, emoji }) => {
+  socket.on('reaction', ({ roomId, emoji, localId }) => {
     if (!rooms.has(roomId)) return;
-    io.in(roomId).emit('reaction', { emoji, id: `${Date.now()}-${Math.random()}` });
+    // Pass localId back so sender can suppress the echo (they already showed it locally)
+    io.in(roomId).emit('reaction', {
+      emoji,
+      id: `${Date.now()}-${Math.random()}`,
+      localId: localId || null,
+      senderId: socket.id,
+    });
   });
 
   socket.on('chat-message', ({ roomId, message, user }) => {

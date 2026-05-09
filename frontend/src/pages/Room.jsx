@@ -37,6 +37,8 @@ export default function Room() {
   const [hoveredTrack, setHoveredTrack] = useState(null);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [activeTab, setActiveTab] = useState('queue');
+  const activeTabRef = useRef('queue');
+  useEffect(() => { activeTabRef.current = activeTab; }, [activeTab]);
   const [lyrics, setLyrics] = useState([]);
   const [activeLine, setActiveLine] = useState(0);
   const [lyricsLoading, setLyricsLoading] = useState(false);
@@ -46,12 +48,16 @@ export default function Room() {
   const [messages, setMessages] = useState([]);
   const [chatInput, setChatInput] = useState('');
   const [chatOpen, setChatOpen] = useState(false);
+  const chatOpenRef = useRef(false);
+  useEffect(() => { chatOpenRef.current = chatOpen; }, [chatOpen]);
   const [chatNotif, setChatNotif] = useState(null);
   const [notifLeaving, setNotifLeaving] = useState(false);
   const [unread, setUnread] = useState(0);
   const chatEndRef = useRef(null);
   const notifTimer = useRef(null);
   const myUsername = useRef('Jammer' + Math.floor(Math.random() * 9000 + 1000));
+  const sentMsgIds = useRef(new Set()); // tracks optimistic messages to avoid duplicates
+  const sentReactionIds = useRef(new Set()); // tracks local reactions to avoid double-fire
   // ── Reactions & fun state
   const [reactions, setReactions] = useState([]);
   const [showConfetti, setShowConfetti] = useState(false);
@@ -379,21 +385,29 @@ export default function Room() {
       }
     });
 
-    socket.on('reaction', ({ emoji, id }) => {
+    socket.on('reaction', ({ emoji, id, localId }) => {
+      // If this is our own reaction echoed back, suppress it (we already showed it locally)
+      if (localId && sentReactionIds.current.has(localId)) {
+        sentReactionIds.current.delete(localId);
+        return;
+      }
       const x = 8 + Math.random() * 84;
       setReactions(prev => [...prev, { emoji, id, x }]);
       setTimeout(() => setReactions(prev => prev.filter(r => r.id !== id)), 3000);
     });
 
     socket.on('chat-message', (msg) => {
+      // Skip if we already added this message optimistically
+      if (sentMsgIds.current.has(msg.id)) {
+        sentMsgIds.current.delete(msg.id);
+        return;
+      }
       setMessages(prev => [...prev, msg]);
-      // Scroll chat to bottom
       setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
-      // Show popup if chat panel not open / not on chat tab
-      const isChatVisible = chatOpen || activeTab === 'chat';
+      // Use refs so we always read current tab/chat state — no stale closure
+      const isChatVisible = chatOpenRef.current || activeTabRef.current === 'chat';
       if (!isChatVisible) {
         setUnread(n => n + 1);
-        // Clear old timer
         clearTimeout(notifTimer.current);
         setNotifLeaving(false);
         setChatNotif(msg);
@@ -411,12 +425,27 @@ export default function Room() {
     };
   }, [roomId, navigate, loadAndPlay]);
 
-  // Send a chat message
+  // Send a chat message — optimistically add to local state immediately
   const sendMessage = () => {
     const text = chatInput.trim();
-    if (!text || !socketRef.current) return;
-    socketRef.current.emit('chat-message', { roomId, message: text, user: myUsername.current });
+    if (!text) return;
+    const msgId = `${Date.now()}-local-${Math.random()}`;
+    const optimisticMsg = {
+      id: msgId,
+      message: text,
+      user: myUsername.current,
+      senderId: 'me',
+      timestamp: Date.now(),
+    };
+    // Show immediately — don't wait for server echo
+    setMessages(prev => [...prev, optimisticMsg]);
+    sentMsgIds.current.add(msgId);
+    setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
     setChatInput('');
+    // Emit to server so others get it
+    if (socketRef.current?.connected) {
+      socketRef.current.emit('chat-message', { roomId, message: text, user: myUsername.current });
+    }
   };
 
   const dismissNotif = () => {
@@ -434,14 +463,18 @@ export default function Room() {
 
   // Send an emoji reaction to all users + show it locally immediately
   const sendReaction = (emoji) => {
-    if (!socketRef.current?.connected) return;
-    // Optimistic local update — don't wait for server echo
-    const localId = `local-${Date.now()}-${Math.random()}`;
+    // Generate a stable ID to track this reaction across local + server echo
+    const reactionId = `${Date.now()}-${Math.random()}`;
     const x = 8 + Math.random() * 84;
-    setReactions(prev => [...prev, { emoji, id: localId, x }]);
-    setTimeout(() => setReactions(prev => prev.filter(r => r.id !== localId)), 3000);
-    // Also emit to server so others see it
-    socketRef.current.emit('reaction', { roomId, emoji });
+    // Show immediately on sender's screen
+    setReactions(prev => [...prev, { emoji, id: reactionId, x }]);
+    setTimeout(() => setReactions(prev => prev.filter(r => r.id !== reactionId)), 3000);
+    // Mark as locally sent so socket listener doesn't double-show it
+    sentReactionIds.current.add(reactionId);
+    // Emit to server with the same ID
+    if (socketRef.current?.connected) {
+      socketRef.current.emit('reaction', { roomId, emoji, localId: reactionId });
+    }
   };
 
   // Submit a track with an optional dedication note
