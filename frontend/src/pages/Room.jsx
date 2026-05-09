@@ -75,7 +75,11 @@ export default function Room() {
   const [duration, setDuration] = useState(0);
   const [hoveredTrack, setHoveredTrack] = useState(null);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
-  const [activeTab, setActiveTab] = useState('queue'); // 'queue' | 'search'
+  const [activeTab, setActiveTab] = useState('queue'); // 'queue' | 'search' | 'lyrics'
+  const [lyrics, setLyrics] = useState([]);       // [{time, text}]
+  const [activeLine, setActiveLine] = useState(0);
+  const [lyricsLoading, setLyricsLoading] = useState(false);
+  const lyricsContainerRef = useRef(null);
 
   const playerRef = useRef(null);
   const isPlayerReadyRef = useRef(false);   // true once onReady fires
@@ -106,6 +110,62 @@ export default function Room() {
     }, 400);
     return () => clearTimeout(timer);
   }, [searchTerm]);
+
+  // Parse LRC synced lyrics format into [{time, text}]
+  const parseLRC = (lrc) => {
+    if (!lrc) return [];
+    return lrc.split('\n')
+      .map(line => {
+        const m = line.match(/\[(\d{2}):(\d{2})\.(\d{2,3})\](.*)/);
+        if (!m) return null;
+        const time = parseInt(m[1]) * 60 + parseInt(m[2]) + parseInt(m[3]) / 1000;
+        return { time, text: m[4].trim() };
+      })
+      .filter(l => l && l.text);
+  };
+
+  // Fetch lyrics from lrclib.net (free, no API key)
+  useEffect(() => {
+    if (!currentTrack?.name) { setLyrics([]); return; }
+    setLyricsLoading(true);
+    setLyrics([]);
+    setActiveLine(0);
+    const params = new URLSearchParams({
+      artist_name: currentTrack.artist || '',
+      track_name:  currentTrack.name  || '',
+    });
+    fetch(`https://lrclib.net/api/search?${params}`)
+      .then(r => r.json())
+      .then(data => {
+        const hit = data?.[0];
+        if (hit?.syncedLyrics) {
+          setLyrics(parseLRC(hit.syncedLyrics));
+        } else if (hit?.plainLyrics) {
+          setLyrics(hit.plainLyrics.split('\n').filter(Boolean).map((text, i) => ({ time: i, text })));
+        } else {
+          setLyrics([]);
+        }
+      })
+      .catch(() => setLyrics([]))
+      .finally(() => setLyricsLoading(false));
+  }, [currentTrack?.name, currentTrack?.artist]);
+
+  // Track active lyric line based on playback position
+  useEffect(() => {
+    if (!lyrics.length) return;
+    let idx = 0;
+    for (let i = 0; i < lyrics.length; i++) {
+      if (lyrics[i].time <= progress) idx = i;
+      else break;
+    }
+    setActiveLine(idx);
+    // Auto-scroll the active line into view
+    const container = lyricsContainerRef.current;
+    if (container) {
+      const activeEl = container.querySelector('.lyric-active');
+      if (activeEl) activeEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [progress, lyrics]);
 
   // ─── Helper: load & play a video safely ────────────────────────────────────
   const loadAndPlay = useCallback((videoId) => {
@@ -349,6 +409,51 @@ export default function Room() {
     </div>
   ));
 
+  const lyricsPanelJSX = (
+    <div ref={lyricsContainerRef} style={{ flex:1, overflowY:'auto', padding: isMobile ? '16px' : '16px 24px 24px', scrollBehavior:'smooth' }}>
+      {!currentTrack ? (
+        <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'100%', color:'#b3b3b3', gap:'12px' }}>
+          <span style={{ fontSize:'40px' }}>🎵</span>
+          <p style={{ fontWeight:'600' }}>No song playing</p>
+          <p style={{ fontSize:'13px' }}>Add a song to the queue to see lyrics</p>
+        </div>
+      ) : lyricsLoading ? (
+        <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'60%', color:'#b3b3b3', gap:'12px' }}>
+          <div style={{ width:'32px', height:'32px', border:'3px solid #333', borderTop:'3px solid #1DB954', borderRadius:'50%', animation:'vinyl-spin 0.8s linear infinite' }} />
+          <p style={{ fontSize:'13px' }}>Fetching lyrics...</p>
+        </div>
+      ) : lyrics.length === 0 ? (
+        <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'60%', color:'#b3b3b3', gap:'12px' }}>
+          <span style={{ fontSize:'36px' }}>😔</span>
+          <p style={{ fontWeight:'600' }}>No lyrics found</p>
+          <p style={{ fontSize:'13px' }}>for <strong style={{ color:'white' }}>{currentTrack?.name}</strong></p>
+        </div>
+      ) : (
+        <div style={{ textAlign:'center', paddingBottom:'80px' }}>
+          <p style={{ fontSize:'13px', color:'#b3b3b3', marginBottom:'32px', fontStyle:'italic' }}>{currentTrack?.name} · {currentTrack?.artist}</p>
+          {lyrics.map((line, i) => (
+            <p
+              key={i}
+              className={i === activeLine ? 'lyric-active' : ''}
+              style={{
+                fontSize: i === activeLine ? (isMobile ? '20px' : '24px') : (isMobile ? '16px' : '18px'),
+                fontWeight: i === activeLine ? '800' : '400',
+                color: i === activeLine ? '#1DB954' : i < activeLine ? 'rgba(255,255,255,0.35)' : 'rgba(255,255,255,0.6)',
+                marginBottom: '18px',
+                lineHeight: '1.4',
+                transition: 'all 0.4s ease',
+                textShadow: i === activeLine ? '0 0 20px rgba(29,185,84,0.5)' : 'none',
+                transform: i === activeLine ? 'scale(1.04)' : 'scale(1)',
+                display: 'block',
+                transformOrigin: 'center',
+              }}
+            >{line.text}</p>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
   const searchPanelJSX = (
     <div style={{ display:'flex', flexDirection:'column', flex:1, overflow:'hidden' }}>
       <div style={{ padding: isMobile ? '12px 16px 8px' : '20px 24px 8px', flexShrink:0 }}>
@@ -505,16 +610,17 @@ export default function Room() {
 
           {/* Mobile Tab Bar */}
           <div style={{ display:'flex', background:'#181818', borderBottom:'1px solid #282828', flexShrink:0 }}>
-            {[['search','🔍 Search'],['queue','📋 Queue']].map(([tab, label]) => (
-              <button key={tab} onClick={() => setActiveTab(tab)} style={{ flex:1, padding:'12px', border:'none', background:'transparent', color: activeTab===tab ? '#1DB954' : '#b3b3b3', fontWeight: activeTab===tab ? '700' : '400', fontSize:'14px', cursor:'pointer', borderBottom: activeTab===tab ? '2px solid #1DB954' : '2px solid transparent', transition:'all 0.15s' }}>
-                {label}
+            {[['search','🔍'],['queue','📋'],['lyrics','🎤']].map(([tab, icon]) => (
+              <button key={tab} onClick={() => setActiveTab(tab)} style={{ flex:1, padding:'10px 4px', border:'none', background:'transparent', color: activeTab===tab ? '#1DB954' : '#b3b3b3', fontWeight: activeTab===tab ? '700' : '400', fontSize:'12px', cursor:'pointer', borderBottom: activeTab===tab ? '2px solid #1DB954' : '2px solid transparent', display:'flex', flexDirection:'column', alignItems:'center', gap:'2px' }}>
+                <span style={{ fontSize:'18px' }}>{icon}</span>
+                <span style={{ textTransform:'capitalize' }}>{tab}</span>
               </button>
             ))}
           </div>
 
           {/* Mobile Tab Content */}
           <div style={{ flex:1, overflow:'hidden', display:'flex', flexDirection:'column' }}>
-            {activeTab === 'search' ? searchPanelJSX : queuePanelJSX}
+            {activeTab === 'search' ? searchPanelJSX : activeTab === 'lyrics' ? lyricsPanelJSX : queuePanelJSX}
           </div>
           {playerBarJSX}
         </>
@@ -556,6 +662,10 @@ export default function Room() {
             <div style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden', background:'linear-gradient(180deg, #2a2a2a 0%, #121212 300px)' }}>
               {searchPanelJSX}
               {!searchTerm && queuePanelJSX}
+            </div>
+            {/* Lyrics Panel — always visible on desktop when a song is loaded */}
+            <div style={{ width: lyrics.length || lyricsLoading ? '320px' : '0', flexShrink:0, overflow:'hidden', borderLeft: lyrics.length || lyricsLoading ? '1px solid #282828' : 'none', transition:'width 0.3s ease', display:'flex', flexDirection:'column', background:'#0d0d0d' }}>
+              {lyricsPanelJSX}
             </div>
           </div>
           {playerBarJSX}
