@@ -953,94 +953,106 @@ export default function Room() {
 
 
   const playerBarJSX = (
-    <div style={{ background:'rgba(6,6,18,0.97)', borderTop:'1px solid rgba(255,255,255,0.07)', padding: isMobile ? '10px 16px' : '0 24px', height: isMobile ? 'auto' : '88px', minHeight: isMobile ? '96px' : 'unset', display:'flex', flexDirection: isMobile ? 'column' : 'row', alignItems:'center', justifyContent:'space-between', gap: isMobile ? '10px' : 0, flexShrink:0, position:'relative', backdropFilter:'blur(20px)' }}>
-      {/* Background aura when playing — pointer-events:none so it never blocks buttons */}
+    <div style={{
+      background:'rgba(6,6,18,0.97)',
+      borderTop:'1px solid rgba(255,255,255,0.07)',
+      backdropFilter:'blur(20px)',
+      flexShrink:0,
+      position:'relative',
+      zIndex:10,
+      // Mobile: compact single row; Desktop: 3-col tall bar
+      height: isMobile ? '64px' : '88px',
+      display:'flex',
+      flexDirection:'row',
+      alignItems:'center',
+      padding: isMobile ? '0 12px' : '0 24px',
+      gap: isMobile ? '10px' : '0',
+      justifyContent:'space-between',
+    }}>
+      {/* Ambient aura — pointer-events:none so it never blocks */}
       {isPlaying && currentTrack && (
-        <div className="aura" style={{ width:'300px', height:'300px', bottom:'-150px', left:'50%', transform:'translateX(-50%)', pointerEvents:'none', zIndex:0 }} />
+        <div className="aura" style={{ position:'absolute', width:'300px', height:'300px', bottom:'-150px', left:'50%', transform:'translateX(-50%)', pointerEvents:'none', zIndex:0 }} />
       )}
-      <div style={{ display:'flex', alignItems:'center', gap:'10px', width: isMobile ? '100%' : '30%', minWidth:0, position:'relative', zIndex:1 }}>
+
+      {/* LEFT — Album art + track name */}
+      <div style={{ display:'flex', alignItems:'center', gap:'10px', flex:1, minWidth:0, position:'relative', zIndex:1 }}>
         {currentTrack ? (
           <>
-            {/* Vinyl-spinning album art */}
-            <div className={isPlaying ? 'glow-playing' : ''} style={{ borderRadius:'50%', flexShrink:0, width: isMobile?'40px':'56px', height: isMobile?'40px':'56px' }}>
-              <img
-                src={currentTrack.albumArt}
-                className={isPlaying ? 'vinyl-spinning' : 'vinyl-paused'}
-                style={{ width:'100%', height:'100%', objectFit:'cover', display:'block' }}
-                alt=""
-              />
+            <div className={isPlaying ? 'glow-playing' : ''} style={{ borderRadius:'50%', flexShrink:0, width: isMobile?'40px':'52px', height: isMobile?'40px':'52px' }}>
+              <img src={currentTrack.albumArt} className={isPlaying ? 'vinyl-spinning' : 'vinyl-paused'} style={{ width:'100%', height:'100%', objectFit:'cover', display:'block' }} alt="" />
             </div>
-            <div style={{ minWidth:0, flex:1 }}>
-              <div style={{ display:'flex', alignItems:'center', gap:'6px' }}>
-                <div style={{ fontWeight:'600', fontSize: isMobile ? '13px' : '14px', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', color: isPlaying ? '#1DB954' : 'white', transition:'color 0.3s' }}>{currentTrack.name}</div>
-                {/* Equalizer bars */}
-                <div style={{ display:'flex', alignItems:'flex-end', gap:'2px', height:'20px', flexShrink:0 }}>
+            <div style={{ minWidth:0 }}>
+              <div style={{ display:'flex', alignItems:'center', gap:'5px' }}>
+                <div style={{ fontWeight:'600', fontSize: isMobile?'13px':'14px', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', color: isPlaying ? '#1DB954' : 'white', transition:'color 0.3s' }}>{currentTrack.name}</div>
+                <div style={{ display:'flex', alignItems:'flex-end', gap:'2px', height:'16px', flexShrink:0 }}>
                   {[0,1,2,3].map(i => (
-                    <div key={i} className={`eq-bar${isPlaying ? '' : ' eq-bar-paused'}`} style={{ height: i%2===0 ? '12px' : '8px' }} />
+                    <div key={i} className={`eq-bar${isPlaying ? '' : ' eq-bar-paused'}`} style={{ height: i%2===0?'10px':'6px' }} />
                   ))}
                 </div>
               </div>
-              <div style={{ color:'#b3b3b3', fontSize:'12px', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{currentTrack.artist}</div>
+              <div style={{ color:'rgba(255,255,255,0.4)', fontSize:'12px', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{currentTrack.artist}</div>
             </div>
           </>
-        ) : <div style={{ color:'#b3b3b3', fontSize:'13px' }}>Nothing playing yet</div>}
-      </div>
-      <div style={{ display:'flex', flexDirection: isMobile ? 'row' : 'column', alignItems:'center', width: isMobile ? '100%' : '40%', position:'relative', zIndex:1, gap: isMobile ? '12px' : 0, justifyContent: isMobile ? 'center' : 'center' }}>
-        <div style={{ display:'flex', alignItems:'center', gap: isMobile ? '16px' : '20px', marginBottom: isMobile ? 0 : '6px' }}>
-          <button onClick={togglePlay} disabled={!currentTrack}
-            style={{
-              width: isMobile ? '44px' : '38px',
-              height: isMobile ? '44px' : '38px',
-              borderRadius:'50%',
-              background: isPlaying ? '#1DB954' : 'white',
-              border:'none',
-              cursor: currentTrack ? 'pointer' : 'not-allowed',
-              display:'flex', alignItems:'center', justifyContent:'center',
-              opacity: currentTrack ? 1 : 0.4,
-              transition:'background 0.2s, transform 0.1s, box-shadow 0.2s',
-              boxShadow: isPlaying ? '0 0 20px rgba(29,185,84,0.6)' : 'none',
-              flexShrink: 0,
-            }}
-            onMouseEnter={e => { if(currentTrack) e.currentTarget.style.transform='scale(1.1)'; }}
-            onMouseLeave={e => e.currentTarget.style.transform='scale(1)'}
-          >
-            {isPlaying
-              ? <Pause size={isMobile ? 20 : 18} fill="black" color="black" />
-              : <Play  size={isMobile ? 20 : 18} fill="black" color="black" style={{ marginLeft:'2px' }} />
-            }
-          </button>
-          <button onClick={handleSkip} disabled={!currentTrack}
-            style={{ background:'transparent', border:'none', color:'rgba(255,255,255,0.6)', cursor: currentTrack?'pointer':'not-allowed', display:'flex', alignItems:'center', opacity: currentTrack?1:0.4, padding:'4px' }}
-          >
-            <SkipForward size={isMobile ? 24 : 22} fill="currentColor" />
-          </button>
-        </div>
-        {/* Progress bar — hide on mobile to save space, show time inline */}
-        {!isMobile && (
-        <div style={{ display:'flex', alignItems:'center', gap:'8px', width:'100%', fontSize:'11px', color:'#b3b3b3' }}>
-          <span style={{ minWidth:'32px', textAlign:'right', fontVariantNumeric:'tabular-nums' }}>{formatTime(progress)}</span>
-          <div
-            style={{ flex:1, height:'4px', background:'rgba(255,255,255,0.1)', borderRadius:'4px', overflow:'hidden', cursor:'pointer' }}
-            onClick={e => {
-              if (!currentTrack || !duration) return;
-              const rect = e.currentTarget.getBoundingClientRect();
-              const pct = (e.clientX - rect.left) / rect.width;
-              const seekTo = pct * duration;
-              playerRef.current?.seekTo?.(seekTo, true);
-              socketRef.current?.emit('seek', { roomId, time: seekTo });
-            }}
-          >
-            <div className={isPlaying ? 'progress-playing' : ''} style={{ height:'100%', width:`${progressPct}%`, background: isPlaying ? undefined : 'rgba(255,255,255,0.6)', borderRadius:'4px', transition:'width 0.5s linear' }} />
-          </div>
-          <span style={{ minWidth:'32px', fontVariantNumeric:'tabular-nums' }}>{formatTime(duration)}</span>
-        </div>
+        ) : (
+          <div style={{ color:'rgba(255,255,255,0.4)', fontSize:'13px' }}>Nothing playing yet</div>
         )}
       </div>
+
+      {/* CENTER (desktop only) — play controls + progress bar */}
       {!isMobile && (
-        <div style={{ width:'30%', display:'flex', justifyContent:'flex-end', alignItems:'center', color:'#b3b3b3', fontSize:'13px', gap:'6px', position:'relative', zIndex:1 }}>
-          <Users size={16} /><span>{userCount}</span>
+        <div style={{ display:'flex', flexDirection:'column', alignItems:'center', width:'40%', position:'relative', zIndex:1 }}>
+          <div style={{ display:'flex', alignItems:'center', gap:'20px', marginBottom:'6px' }}>
+            <button onClick={togglePlay} disabled={!currentTrack}
+              style={{ width:'38px', height:'38px', borderRadius:'50%', background: isPlaying?'#1DB954':'white', border:'none', cursor: currentTrack?'pointer':'not-allowed', display:'flex', alignItems:'center', justifyContent:'center', opacity: currentTrack?1:0.4, transition:'background 0.2s, box-shadow 0.2s', boxShadow: isPlaying?'0 0 20px rgba(29,185,84,0.5)':'none' }}
+              onMouseEnter={e => { if(currentTrack) e.currentTarget.style.transform='scale(1.08)'; }}
+              onMouseLeave={e => e.currentTarget.style.transform='scale(1)'}
+            >
+              {isPlaying ? <Pause size={18} fill="black" color="black" /> : <Play size={18} fill="black" color="black" style={{ marginLeft:'2px' }} />}
+            </button>
+            <button onClick={handleSkip} disabled={!currentTrack} style={{ background:'transparent', border:'none', color:'rgba(255,255,255,0.5)', cursor: currentTrack?'pointer':'not-allowed', display:'flex', alignItems:'center', opacity: currentTrack?1:0.4 }}>
+              <SkipForward size={22} fill="currentColor" />
+            </button>
+          </div>
+          {/* Progress bar */}
+          <div style={{ display:'flex', alignItems:'center', gap:'8px', width:'100%', fontSize:'11px', color:'rgba(255,255,255,0.5)' }}>
+            <span style={{ minWidth:'32px', textAlign:'right', fontVariantNumeric:'tabular-nums' }}>{formatTime(progress)}</span>
+            <div style={{ flex:1, height:'4px', background:'rgba(255,255,255,0.1)', borderRadius:'4px', overflow:'hidden', cursor:'pointer' }}
+              onClick={e => {
+                if (!currentTrack || !duration) return;
+                const rect = e.currentTarget.getBoundingClientRect();
+                const seekTo = ((e.clientX - rect.left) / rect.width) * duration;
+                playerRef.current?.seekTo?.(seekTo, true);
+                socketRef.current?.emit('seek', { roomId, time: seekTo });
+              }}
+            >
+              <div className={isPlaying ? 'progress-playing' : ''} style={{ height:'100%', width:`${progressPct}%`, background: isPlaying ? undefined : 'rgba(255,255,255,0.6)', borderRadius:'4px', transition:'width 0.5s linear' }} />
+            </div>
+            <span style={{ minWidth:'32px', fontVariantNumeric:'tabular-nums' }}>{formatTime(duration)}</span>
+          </div>
         </div>
       )}
+
+      {/* RIGHT — play/skip on mobile, user count on desktop */}
+      <div style={{ display:'flex', alignItems:'center', gap: isMobile?'8px':'6px', position:'relative', zIndex:1, flexShrink:0 }}>
+        {isMobile ? (
+          // Mobile: compact play + skip buttons on the right
+          <>
+            <button onClick={togglePlay} disabled={!currentTrack}
+              style={{ width:'44px', height:'44px', borderRadius:'50%', background: isPlaying?'#1DB954':'white', border:'none', cursor: currentTrack?'pointer':'not-allowed', display:'flex', alignItems:'center', justifyContent:'center', opacity: currentTrack?1:0.4, boxShadow: isPlaying?'0 0 16px rgba(29,185,84,0.6)':'none', transition:'background 0.2s, box-shadow 0.2s', flexShrink:0 }}
+            >
+              {isPlaying ? <Pause size={20} fill="black" color="black" /> : <Play size={20} fill="black" color="black" style={{ marginLeft:'2px' }} />}
+            </button>
+            <button onClick={handleSkip} disabled={!currentTrack} style={{ background:'rgba(255,255,255,0.07)', border:'1px solid rgba(255,255,255,0.1)', borderRadius:'50%', width:'36px', height:'36px', cursor: currentTrack?'pointer':'not-allowed', display:'flex', alignItems:'center', justifyContent:'center', color:'rgba(255,255,255,0.7)', opacity: currentTrack?1:0.4 }}>
+              <SkipForward size={18} fill="currentColor" />
+            </button>
+          </>
+        ) : (
+          // Desktop: listener count
+          <div style={{ color:'rgba(255,255,255,0.4)', fontSize:'13px', display:'flex', alignItems:'center', gap:'5px' }}>
+            <Users size={15} /><span>{userCount}</span>
+          </div>
+        )}
+      </div>
     </div>
   );
 
