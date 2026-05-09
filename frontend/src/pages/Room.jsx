@@ -1103,7 +1103,7 @@ export default function Room() {
 
   // ─── Main Room UI ─────────────────────────────────────────────────────────
   return (
-    <div style={{ display:'flex', flexDirection:'column', height:'100vh', width:'100vw', overflow:'hidden', backgroundColor:'#060612', color:'white' }}>
+    <div style={{ display:'flex', flexDirection:'column', height:'100dvh', width:'100vw', overflow:'hidden', backgroundColor:'#060612', color:'white' }}>
       {notifJSX}
       {confettiJSX}
       {reactionParticlesJSX}
