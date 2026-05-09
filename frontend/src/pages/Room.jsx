@@ -74,6 +74,8 @@ export default function Room() {
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
   const [hoveredTrack, setHoveredTrack] = useState(null);
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [activeTab, setActiveTab] = useState('queue'); // 'queue' | 'search'
 
   const playerRef = useRef(null);
   const isPlayerReadyRef = useRef(false);   // true once onReady fires
@@ -83,6 +85,27 @@ export default function Room() {
 
   // Keep ref in sync with state for use inside closures
   useEffect(() => { hasInteractedRef.current = hasInteracted; }, [hasInteracted]);
+
+  // Responsive: track window width
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  // Debounced dynamic search — fires 400ms after user stops typing
+  useEffect(() => {
+    if (!searchTerm.trim()) { setSearchResults([]); return; }
+    const timer = setTimeout(async () => {
+      setIsSearching(true);
+      try {
+        const res = await axios.get(`${SOCKET_URL}/api/search?q=${encodeURIComponent(searchTerm)}`);
+        setSearchResults(res.data);
+      } catch { setSearchResults([]); }
+      setIsSearching(false);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
 
   // ─── Helper: load & play a video safely ────────────────────────────────────
   const loadAndPlay = useCallback((videoId) => {
@@ -303,219 +326,228 @@ export default function Room() {
 
   const progressPct = duration > 0 ? (progress / duration) * 100 : 0;
 
+  // ─── Shared sub-components ────────────────────────────────────────────────
+  const TrackList = ({ tracks, isQueue }) => (
+    <>
+      {tracks.map((track, i) => (
+        <div
+          key={track.id + (isQueue ? 'q' : '')}
+          style={{ display:'flex', alignItems:'center', padding:'10px 8px', borderRadius:'6px', gap:'12px', background: hoveredTrack === track.id+(isQueue?'q':'') ? 'rgba(255,255,255,0.07)' : 'transparent', cursor:'pointer' }}
+          onMouseEnter={() => setHoveredTrack(track.id+(isQueue?'q':''))}
+          onMouseLeave={() => setHoveredTrack(null)}
+          onTouchStart={() => setHoveredTrack(track.id+(isQueue?'q':''))}
+        >
+          {isQueue && <span style={{ color:'#b3b3b3', width:'18px', fontSize:'13px', flexShrink:0 }}>{i+1}</span>}
+          <img src={isQueue ? track.albumArt : (track.album?.images?.[2]?.url||'')} style={{ width:'42px', height:'42px', borderRadius:'4px', objectFit:'cover', flexShrink:0, background:'#333' }} alt="" onError={e=>e.currentTarget.style.background='#333'} />
+          <div style={{ flex:1, minWidth:0 }}>
+            <div style={{ fontWeight:'500', fontSize:'14px', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{isQueue ? track.name : track.name}</div>
+            <div style={{ color:'#b3b3b3', fontSize:'12px', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{isQueue ? track.artist : track.artists?.[0]?.name}</div>
+          </div>
+          {!isQueue && (
+            <button
+              onClick={() => { handleAddTrack(track); if(isMobile) setActiveTab('queue'); }}
+              style={{ flexShrink:0, border:'1px solid #b3b3b3', background:'transparent', color:'white', borderRadius:'50px', padding:'5px 12px', fontSize:'11px', fontWeight:'700', cursor:'pointer', opacity: hoveredTrack===track.id ? 1 : isMobile ? 1 : 0, transition:'opacity 0.15s' }}
+            >ADD</button>
+          )}
+        </div>
+      ))}
+    </>
+  );
+
+  const PlayerBar = () => (
+    <div style={{ background:'#181818', borderTop:'1px solid #282828', padding: isMobile ? '8px 12px' : '0 16px', height: isMobile ? 'auto' : '90px', display:'flex', flexDirection: isMobile ? 'column' : 'row', alignItems:'center', justifyContent:'space-between', gap: isMobile ? '8px' : 0, flexShrink:0 }}>
+      {/* Track info */}
+      <div style={{ display:'flex', alignItems:'center', gap:'10px', width: isMobile ? '100%' : '30%', minWidth:0 }}>
+        {currentTrack ? (
+          <>
+            <img src={currentTrack.albumArt} style={{ width: isMobile ? '40px' : '56px', height: isMobile ? '40px' : '56px', borderRadius:'4px', objectFit:'cover', flexShrink:0 }} alt="" />
+            <div style={{ minWidth:0, flex:1 }}>
+              <div style={{ fontWeight:'600', fontSize: isMobile ? '13px' : '14px', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{currentTrack.name}</div>
+              <div style={{ color:'#b3b3b3', fontSize:'12px', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{currentTrack.artist}</div>
+            </div>
+          </>
+        ) : <div style={{ color:'#b3b3b3', fontSize:'13px' }}>Nothing playing yet</div>}
+      </div>
+      {/* Controls */}
+      <div style={{ display:'flex', flexDirection:'column', alignItems:'center', width: isMobile ? '100%' : '40%' }}>
+        <div style={{ display:'flex', alignItems:'center', gap:'20px', marginBottom:'6px' }}>
+          <button onClick={togglePlay} disabled={!currentTrack} style={{ width:'38px', height:'38px', borderRadius:'50%', background:'white', border:'none', cursor: currentTrack?'pointer':'not-allowed', display:'flex', alignItems:'center', justifyContent:'center', opacity: currentTrack?1:0.4 }}>
+            {isPlaying ? <Pause size={18} fill="black" color="black" /> : <Play size={18} fill="black" color="black" style={{ marginLeft:'2px' }} />}
+          </button>
+          <button onClick={handleSkip} disabled={!currentTrack} style={{ background:'transparent', border:'none', color:'#b3b3b3', cursor: currentTrack?'pointer':'not-allowed', display:'flex', alignItems:'center', opacity: currentTrack?1:0.4 }}>
+            <SkipForward size={22} fill="currentColor" />
+          </button>
+        </div>
+        <div style={{ display:'flex', alignItems:'center', gap:'8px', width:'100%', fontSize:'11px', color:'#b3b3b3' }}>
+          <span style={{ minWidth:'32px', textAlign:'right' }}>{formatTime(progress)}</span>
+          <div style={{ flex:1, height:'4px', background:'#4d4d4d', borderRadius:'4px', overflow:'hidden' }}>
+            <div style={{ height:'100%', width:`${progressPct}%`, background: isPlaying?'#1DB954':'white', borderRadius:'4px', transition:'width 0.5s linear' }} />
+          </div>
+          <span style={{ minWidth:'32px' }}>{formatTime(duration)}</span>
+        </div>
+      </div>
+      {/* Right */}
+      {!isMobile && (
+        <div style={{ width:'30%', display:'flex', justifyContent:'flex-end', alignItems:'center', color:'#b3b3b3', fontSize:'13px', gap:'6px' }}>
+          <Users size={16} /><span>{userCount}</span>
+        </div>
+      )}
+    </div>
+  );
+
+  const SearchPanel = () => (
+    <div style={{ display:'flex', flexDirection:'column', flex:1, overflow:'hidden' }}>
+      <div style={{ padding: isMobile ? '12px 16px 8px' : '20px 24px 8px', flexShrink:0 }}>
+        <div style={{ position:'relative', maxWidth: isMobile ? '100%' : '480px' }}>
+          <span style={{ position:'absolute', left:'16px', top:'50%', transform:'translateY(-50%)', color:'#b3b3b3', pointerEvents:'none' }}><Search size={18} /></span>
+          <input
+            type="text" value={searchTerm}
+            onChange={e => setSearchTerm(e.target.value)}
+            placeholder="Search for songs or artists..."
+            autoFocus={isMobile}
+            style={{ width:'100%', background:'#242424', border:'none', borderRadius:'50px', color:'white', padding:'12px 20px 12px 48px', fontSize:'14px', outline:'none', boxSizing:'border-box' }}
+            onFocus={e => e.currentTarget.style.background='#333'}
+            onBlur={e => e.currentTarget.style.background='#242424'}
+          />
+        </div>
+      </div>
+      <div style={{ flex:1, overflowY:'auto', padding: isMobile ? '8px 16px 16px' : '8px 24px 24px' }}>
+        {isSearching && <p style={{ color:'#b3b3b3', padding:'16px 8px' }}>Searching Spotify...</p>}
+        {!isSearching && searchTerm && searchResults.length === 0 && <p style={{ color:'#b3b3b3', padding:'16px 8px' }}>No results found.</p>}
+        {searchResults.length > 0 && <TrackList tracks={searchResults} isQueue={false} />}
+        {!searchTerm && (
+          <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:'48px 24px', color:'#b3b3b3', gap:'12px' }}>
+            <Search size={48} style={{ opacity:0.2 }} />
+            <p style={{ fontWeight:'600' }}>Search for a song</p>
+            <p style={{ fontSize:'13px' }}>Results appear as you type</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  const QueuePanel = () => (
+    <div style={{ flex:1, overflowY:'auto', padding: isMobile ? '16px' : '16px 24px 24px' }}>
+      <p style={{ fontSize: isMobile ? '18px' : '22px', fontWeight:'800', marginBottom:'16px' }}>Up Next</p>
+      {queue.length === 0 ? (
+        <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:'48px 24px', color:'#b3b3b3', border:'1px dashed rgba(255,255,255,0.1)', borderRadius:'12px', gap:'12px' }}>
+          <ListMusic size={48} style={{ opacity:0.3 }} />
+          <p style={{ fontWeight:'600' }}>Queue is empty</p>
+          <p style={{ fontSize:'13px' }}>Search for a song to start the jam!</p>
+        </div>
+      ) : <TrackList tracks={queue} isQueue={true} />}
+    </div>
+  );
+
   // ─── Main Room UI ─────────────────────────────────────────────────────────
   return (
-    <div style={S.root}>
+    <div style={{ display:'flex', flexDirection:'column', height:'100vh', width:'100vw', overflow:'hidden', backgroundColor:'#121212', color:'white' }}>
       {/* Hidden YouTube Player */}
-      <div style={{ position: 'absolute', left: '-9999px', top: '-9999px', width: '300px', height: '300px', pointerEvents: 'none' }}>
+      <div style={{ position:'absolute', left:'-9999px', top:'-9999px', width:'300px', height:'300px', pointerEvents:'none' }}>
         <div id="yt-player-container"></div>
       </div>
 
       {!hasInteracted ? (
-        <div style={S.overlay}>
-          <div style={S.overlayCard}>
-            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '24px' }}>
-              <div style={{ width: '72px', height: '72px', background: '#1DB954', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 40px rgba(29,185,84,0.4)' }}>
+        <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', background:'linear-gradient(135deg, rgba(29,183,84,0.1) 0%, #121212 60%)', padding:'20px' }}>
+          <div style={{ textAlign:'center', padding:'48px 32px', background:'#181818', borderRadius:'16px', maxWidth:'400px', width:'100%', border:'1px solid rgba(255,255,255,0.05)', boxShadow:'0 24px 60px rgba(0,0,0,0.5)' }}>
+            <div style={{ display:'flex', justifyContent:'center', marginBottom:'24px' }}>
+              <div style={{ width:'72px', height:'72px', background:'#1DB954', borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', boxShadow:'0 0 40px rgba(29,185,84,0.4)' }}>
                 <Music size={36} color="black" />
               </div>
             </div>
-            <h2 style={{ fontSize: '26px', fontWeight: '800', marginBottom: '12px' }}>Ready to join the Jam?</h2>
-            <p style={{ color: '#b3b3b3', marginBottom: '32px', lineHeight: '1.6' }}>
-              Room <strong style={{ color: '#1DB954', fontFamily: 'monospace', letterSpacing: '2px' }}>{roomId}</strong><br />
+            <h2 style={{ fontSize:'24px', fontWeight:'800', marginBottom:'10px' }}>Ready to join the Jam?</h2>
+            <p style={{ color:'#b3b3b3', marginBottom:'28px', lineHeight:'1.6', fontSize:'14px' }}>
+              Room <strong style={{ color:'#1DB954', fontFamily:'monospace', letterSpacing:'2px' }}>{roomId}</strong><br />
               Click below so your browser allows audio to play.
             </p>
-            <button
-              style={S.enterBtn}
-              onClick={handleEnterRoom}
-              onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.04)'}
-              onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
-            >
+            <button onClick={handleEnterRoom} style={{ background:'#1DB954', color:'black', fontWeight:'700', padding:'14px 40px', borderRadius:'50px', border:'none', cursor:'pointer', fontSize:'16px', width:'100%' }}>
               Enter the Jam 🎵
             </button>
           </div>
         </div>
-      ) : (
+      ) : isMobile ? (
+        /* ── MOBILE LAYOUT ── */
         <>
-          <div style={S.main}>
-        {/* ── Sidebar ── */}
-        <div style={S.sidebar}>
-          <div style={S.logo}>
-            <Music color="#1DB954" size={28} />
-            <span style={S.logoText}>YourJam</span>
-          </div>
-
-          <div style={{ marginBottom: '24px' }}>
-            <p style={S.sectionLabel}>Your Room</p>
-            <div style={S.roomCard}>
-              <div style={S.roomCodeLabel}>Room Code</div>
-              <div style={S.roomCodeRow}>
-                <span style={S.roomCode}>{roomId}</span>
-                <button onClick={copyRoomCode} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#b3b3b3', display: 'flex' }}>
-                  {copied ? <CheckCircle2 size={18} color="#1DB954" /> : <Copy size={18} color="#b3b3b3" />}
+          {/* Mobile Top Bar */}
+          <div style={{ background:'#000', padding:'12px 16px', display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0, borderBottom:'1px solid #282828' }}>
+            <div style={{ display:'flex', alignItems:'center', gap:'8px' }}>
+              <Music color="#1DB954" size={22} />
+              <span style={{ fontWeight:'800', fontSize:'18px' }}>YourJam</span>
+            </div>
+            <div style={{ display:'flex', alignItems:'center', gap:'12px' }}>
+              <div style={{ display:'flex', alignItems:'center', gap:'5px', color:'#b3b3b3', fontSize:'12px' }}>
+                <Users size={14} /><span>{userCount}</span>
+              </div>
+              <div style={{ background:'#181818', borderRadius:'8px', padding:'6px 10px', display:'flex', alignItems:'center', gap:'8px' }}>
+                <span style={{ fontFamily:'monospace', fontSize:'14px', fontWeight:'800', letterSpacing:'3px', color:'#1DB954' }}>{roomId}</span>
+                <button onClick={copyRoomCode} style={{ background:'transparent', border:'none', cursor:'pointer', color:'#b3b3b3', display:'flex', padding:0 }}>
+                  {copied ? <CheckCircle2 size={16} color="#1DB954" /> : <Copy size={16} color="#b3b3b3" />}
                 </button>
               </div>
             </div>
-            <div style={S.userCount}>
-              <Users size={15} />
-              <span>{userCount} listener{userCount !== 1 ? 's' : ''}</span>
-            </div>
           </div>
 
-          {currentTrack && (
-            <div style={{ marginTop: 'auto' }}>
-              <p style={S.sectionLabel}>Now Playing</p>
-              <div style={{ borderRadius: '8px', overflow: 'hidden', boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}>
-                <img src={currentTrack.albumArt} alt="" style={{ width: '100%', aspectRatio: '1', objectFit: 'cover', display: 'block' }} />
+          {/* Mobile Tab Bar */}
+          <div style={{ display:'flex', background:'#181818', borderBottom:'1px solid #282828', flexShrink:0 }}>
+            {[['search','🔍 Search'],['queue','📋 Queue']].map(([tab, label]) => (
+              <button key={tab} onClick={() => setActiveTab(tab)} style={{ flex:1, padding:'12px', border:'none', background:'transparent', color: activeTab===tab ? '#1DB954' : '#b3b3b3', fontWeight: activeTab===tab ? '700' : '400', fontSize:'14px', cursor:'pointer', borderBottom: activeTab===tab ? '2px solid #1DB954' : '2px solid transparent', transition:'all 0.15s' }}>
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {/* Mobile Tab Content */}
+          <div style={{ flex:1, overflow:'hidden', display:'flex', flexDirection:'column' }}>
+            {activeTab === 'search' ? <SearchPanel /> : <QueuePanel />}
+          </div>
+
+          {/* Mobile Player Bar */}
+          <PlayerBar />
+        </>
+      ) : (
+        /* ── DESKTOP LAYOUT ── */
+        <>
+          <div style={{ display:'flex', flex:1, overflow:'hidden' }}>
+            {/* Sidebar */}
+            <div style={{ width:'240px', background:'#000', padding:'24px 16px', display:'flex', flexDirection:'column', flexShrink:0 }}>
+              <div style={{ display:'flex', alignItems:'center', gap:'10px', marginBottom:'32px', paddingLeft:'8px' }}>
+                <Music color="#1DB954" size={28} />
+                <span style={{ fontSize:'20px', fontWeight:'800' }}>YourJam</span>
               </div>
-              <p style={{ fontWeight: '700', marginTop: '12px', fontSize: '14px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{currentTrack.name}</p>
-              <p style={{ color: '#b3b3b3', fontSize: '13px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{currentTrack.artist}</p>
-            </div>
-          )}
-        </div>
-
-        {/* ── Center Area ── */}
-        <div style={S.centerArea}>
-          {/* Search Bar */}
-          <div style={S.searchBar}>
-            <form onSubmit={handleSearch} style={S.searchWrap}>
-              <span style={S.searchIcon}><Search size={18} /></span>
-              <input
-                type="text"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Search for songs or artists"
-                style={S.searchInput}
-                onFocus={e => e.currentTarget.style.background = '#333'}
-                onBlur={e => e.currentTarget.style.background = '#242424'}
-              />
-            </form>
-          </div>
-
-          <div style={S.scrollArea}>
-            {/* Search Results */}
-            {(searchResults.length > 0 || isSearching) && (
-              <>
-                <p style={S.sectionTitle}>Search Results</p>
-                {isSearching ? (
-                  <p style={{ color: '#b3b3b3', animation: 'pulse 1.5s infinite' }}>Searching Spotify...</p>
-                ) : (
-                  searchResults.map((track) => (
-                    <div
-                      key={track.id}
-                      style={{ ...S.trackRow, background: hoveredTrack === track.id ? 'rgba(255,255,255,0.07)' : 'transparent' }}
-                      onMouseEnter={() => setHoveredTrack(track.id)}
-                      onMouseLeave={() => setHoveredTrack(null)}
-                    >
-                      <img src={track.album?.images?.[2]?.url || ''} style={S.trackArt} alt="" onError={e => e.currentTarget.style.background = '#333'} />
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={S.trackName}>{track.name}</div>
-                        <div style={S.trackArtist}>{track.artists?.[0]?.name}</div>
-                      </div>
-                      <button
-                        style={{ ...S.addBtn, opacity: hoveredTrack === track.id ? 1 : 0 }}
-                        onClick={() => handleAddTrack(track)}
-                        onMouseEnter={e => { e.currentTarget.style.borderColor = 'white'; e.currentTarget.style.transform = 'scale(1.05)'; }}
-                        onMouseLeave={e => { e.currentTarget.style.borderColor = '#b3b3b3'; e.currentTarget.style.transform = 'scale(1)'; }}
-                      >
-                        ADD TO QUEUE
-                      </button>
-                    </div>
-                  ))
-                )}
-              </>
-            )}
-
-            {/* Queue */}
-            {!searchResults.length && !isSearching && (
-              <>
-                <p style={S.sectionTitle}>Up Next</p>
-                {queue.length === 0 ? (
-                  <div style={S.emptyQueue}>
-                    <ListMusic size={52} style={{ opacity: 0.3 }} />
-                    <p style={{ fontWeight: '600' }}>The queue is empty</p>
-                    <p style={{ fontSize: '14px' }}>Search for a song to start the jam!</p>
+              <div style={{ marginBottom:'24px' }}>
+                <p style={S.sectionLabel}>Your Room</p>
+                <div style={S.roomCard}>
+                  <div style={S.roomCodeLabel}>Room Code</div>
+                  <div style={S.roomCodeRow}>
+                    <span style={S.roomCode}>{roomId}</span>
+                    <button onClick={copyRoomCode} style={{ background:'transparent', border:'none', cursor:'pointer', color:'#b3b3b3', display:'flex' }}>
+                      {copied ? <CheckCircle2 size={18} color="#1DB954" /> : <Copy size={18} color="#b3b3b3" />}
+                    </button>
                   </div>
-                ) : (
-                  queue.map((track, i) => (
-                    <div
-                      key={track.id}
-                      style={{ ...S.trackRow, background: hoveredTrack === track.id + 'q' ? 'rgba(255,255,255,0.07)' : 'transparent' }}
-                      onMouseEnter={() => setHoveredTrack(track.id + 'q')}
-                      onMouseLeave={() => setHoveredTrack(null)}
-                    >
-                      <span style={S.queueNum}>{i + 1}</span>
-                      <img src={track.albumArt} style={S.trackArt} alt="" onError={e => e.currentTarget.style.background = '#333'} />
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={S.trackName}>{track.name}</div>
-                        <div style={S.trackArtist}>{track.artist}</div>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* ── Bottom Player Bar ── */}
-      <div style={S.playerBar}>
-        {/* Now Playing */}
-        <div style={S.nowPlayingWrap}>
-          {currentTrack ? (
-            <>
-              <img src={currentTrack.albumArt} style={S.nowPlayingArt} alt="" onError={e => e.currentTarget.style.background = '#333'} />
-              <div style={S.nowPlayingText}>
-                <div style={S.nowPlayingName}>{currentTrack.name}</div>
-                <div style={S.nowPlayingArtist}>{currentTrack.artist}</div>
+                </div>
+                <div style={S.userCount}><Users size={15} /><span>{userCount} listener{userCount!==1?'s':''}</span></div>
               </div>
-            </>
-          ) : (
-            <div style={{ color: '#b3b3b3', fontSize: '13px' }}>Nothing playing yet</div>
-          )}
-        </div>
-
-        {/* Controls */}
-        <div style={S.controlsWrap}>
-          <div style={S.controlBtns}>
-            <button
-              onClick={togglePlay}
-              disabled={!currentTrack}
-              style={{ ...S.playBtn, opacity: currentTrack ? 1 : 0.4, cursor: currentTrack ? 'pointer' : 'not-allowed' }}
-              onMouseEnter={e => { if (currentTrack) e.currentTarget.style.transform = 'scale(1.06)'; }}
-              onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; }}
-            >
-              {isPlaying ? <Pause size={18} fill="black" color="black" /> : <Play size={18} fill="black" color="black" style={{ marginLeft: '2px' }} />}
-            </button>
-            <button
-              onClick={handleSkip}
-              disabled={!currentTrack}
-              style={{ ...S.skipBtn, opacity: currentTrack ? 1 : 0.4, cursor: currentTrack ? 'pointer' : 'not-allowed' }}
-              onMouseEnter={e => { if (currentTrack) e.currentTarget.style.color = 'white'; }}
-              onMouseLeave={e => { e.currentTarget.style.color = '#b3b3b3'; }}
-            >
-              <SkipForward size={22} fill="currentColor" />
-            </button>
-          </div>
-          <div style={S.progressRow}>
-            <span style={{ minWidth: '36px', textAlign: 'right' }}>{formatTime(progress)}</span>
-            <div style={S.progressTrack}>
-              <div style={{ ...S.progressFill, width: `${progressPct}%`, background: isPlaying ? '#1DB954' : 'white' }}></div>
+              {currentTrack && (
+                <div style={{ marginTop:'auto' }}>
+                  <p style={S.sectionLabel}>Now Playing</p>
+                  <div style={{ borderRadius:'8px', overflow:'hidden', boxShadow:'0 8px 24px rgba(0,0,0,0.5)' }}>
+                    <img src={currentTrack.albumArt} alt="" style={{ width:'100%', aspectRatio:'1', objectFit:'cover', display:'block' }} />
+                  </div>
+                  <p style={{ fontWeight:'700', marginTop:'12px', fontSize:'14px', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{currentTrack.name}</p>
+                  <p style={{ color:'#b3b3b3', fontSize:'13px', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{currentTrack.artist}</p>
+                </div>
+              )}
             </div>
-            <span style={{ minWidth: '36px' }}>{formatTime(duration)}</span>
+            {/* Center Area */}
+            <div style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden', background:'linear-gradient(180deg, #2a2a2a 0%, #121212 300px)' }}>
+              <SearchPanel />
+              {!searchTerm && <QueuePanel />}
+            </div>
           </div>
-        </div>
-
-        {/* Right Side */}
-        <div style={S.rightControls}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#b3b3b3', fontSize: '13px' }}>
-            <Users size={16} />
-            <span>{userCount}</span>
-          </div>
-        </div>
-      </div>
+          <PlayerBar />
         </>
       )}
     </div>
   );
 }
+
