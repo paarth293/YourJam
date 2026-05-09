@@ -239,7 +239,13 @@ io.on('connection', (socket) => {
     }
   });
 
+  socket.on('reaction', ({ roomId, emoji }) => {
+    if (!rooms.has(roomId)) return;
+    io.in(roomId).emit('reaction', { emoji, id: `${Date.now()}-${Math.random()}` });
+  });
+
   socket.on('chat-message', ({ roomId, message, user }) => {
+
     if (!rooms.has(roomId)) return;
     if (!message?.trim()) return;
     io.in(roomId).emit('chat-message', {

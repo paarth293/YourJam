@@ -45,14 +45,18 @@ export default function Room() {
   // ── Chat state
   const [messages, setMessages] = useState([]);
   const [chatInput, setChatInput] = useState('');
-  const [chatOpen, setChatOpen] = useState(false);   // desktop chat panel
-  const [chatNotif, setChatNotif] = useState(null);  // popup message
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatNotif, setChatNotif] = useState(null);
   const [notifLeaving, setNotifLeaving] = useState(false);
   const [unread, setUnread] = useState(0);
   const chatEndRef = useRef(null);
   const notifTimer = useRef(null);
-  // Generate a stable random username per session
   const myUsername = useRef('Jammer' + Math.floor(Math.random() * 9000 + 1000));
+  // ── Reactions & fun state
+  const [reactions, setReactions] = useState([]);      // floating emoji particles
+  const [showConfetti, setShowConfetti] = useState(false);
+  const [pendingTrack, setPendingTrack] = useState(null);  // track waiting for dedication
+  const [dedicationText, setDedicationText] = useState('');
 
   const playerRef = useRef(null);
   const isPlayerReadyRef = useRef(false);   // true once onReady fires
@@ -255,13 +259,18 @@ export default function Room() {
     socket.on('update-queue', setQueue);
 
     socket.on('track-changed', (track) => {
-      console.log('🎶 Track changed:', track?.name, '| youtubeId:', track?.youtubeId);
+      console.log('🎶 Track changed:', track?.name);
       setCurrentTrack(track);
       setProgress(0);
       setDuration(0);
       setIsPlaying(!!track);
       if (track?.youtubeId && hasInteractedRef.current) {
         loadAndPlay(track.youtubeId);
+      }
+      // 🎊 Confetti burst on every new song
+      if (track) {
+        setShowConfetti(true);
+        setTimeout(() => setShowConfetti(false), 3500);
       }
     });
 
@@ -292,6 +301,12 @@ export default function Room() {
       if (isPlayerReadyRef.current && playerRef.current?.seekTo && hasInteractedRef.current) {
         playerRef.current.seekTo(time, true);
       }
+    });
+
+    socket.on('reaction', ({ emoji, id }) => {
+      const x = 8 + Math.random() * 84;   // random horizontal position
+      setReactions(prev => [...prev, { emoji, id, x }]);
+      setTimeout(() => setReactions(prev => prev.filter(r => r.id !== id)), 3000);
     });
 
     socket.on('chat-message', (msg) => {
@@ -341,6 +356,40 @@ export default function Room() {
     setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'instant' }), 80);
   };
 
+  // Send an emoji reaction to all users
+  const sendReaction = (emoji) => {
+    socketRef.current?.emit('reaction', { roomId, emoji });
+  };
+
+  // Submit a track with an optional dedication note
+  const submitWithDedication = () => {
+    if (!pendingTrack) return;
+    // Add the track to the queue
+    socketRef.current?.emit('add-track', { roomId, track: pendingTrack });
+    // If there's a dedication message, send it as a special system chat message
+    if (dedicationText.trim()) {
+      const sysMsg = {
+        id: `sys-${Date.now()}`,
+        message: dedicationText.trim(),
+        user: myUsername.current,
+        senderId: 'system',
+        timestamp: Date.now(),
+        isDedication: true,
+        trackName: pendingTrack.name,
+      };
+      socketRef.current?.emit('chat-message', {
+        roomId,
+        message: `🎵 "${pendingTrack.name}" — ${dedicationText.trim()} 💕`,
+        user: myUsername.current,
+        isDedication: true,
+      });
+    }
+    // Reset
+    setPendingTrack(null);
+    setDedicationText('');
+    if (isMobile) setActiveTab('queue');
+  };
+
 
   useEffect(() => {
     clearInterval(progressIntervalRef.current);
@@ -387,8 +436,11 @@ export default function Room() {
     setIsSearching(false);
   };
 
+
   const handleAddTrack = (track) => {
-    socketRef.current?.emit('add-track', { roomId, track });
+    // Open dedication modal — user can add a love note with the song
+    setPendingTrack(track);
+    setDedicationText('');
     setSearchTerm('');
     setSearchResults([]);
   };
@@ -491,7 +543,101 @@ export default function Room() {
     </div>
   );
 
+  // ── Pre-computed confetti pieces (stable, no random in render)
+  const CONFETTI_COLORS = ['#1DB954','#ff6496','#ffd700','#00d4ff','#ff8c00','#c084fc','#f472b6','#34d399'];
+  const CONFETTI_PIECES = Array.from({length:22}, (_,i) => ({
+    left: `${(i * 4.5) % 100}%`,
+    color: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
+    dur: `${2 + (i % 5) * 0.4}s`,
+    delay: `${(i * 0.12) % 1.2}s`,
+  }));
+
+  // ── 🎊 Confetti burst
+  const confettiJSX = showConfetti ? (
+    <>
+      {CONFETTI_PIECES.map((p, i) => (
+        <div key={i} className="confetti-piece" style={{ left:p.left, background:p.color, '--dur':p.dur, '--delay':p.delay }} />
+      ))}
+    </>
+  ) : null;
+
+  // ── 🎭 Floating reaction particles
+  const reactionParticlesJSX = reactions.map(r => (
+    <div key={r.id} className="reaction-particle" style={{ left:`${r.x}%` }}>{r.emoji}</div>
+  ));
+
+  // ── 🎭 Reaction bar — floating pill of emoji buttons
+  const EMOJIS = ['❤️','🔥','😍','🎵','✨','💫','😂','🎉','👏','💕'];
+  const reactionBarJSX = hasInteracted ? (
+    <div style={{
+      position:'fixed', right:'16px', bottom:'106px', zIndex:200,
+      display:'flex', flexDirection:'column', gap:'6px', alignItems:'center',
+    }}>
+      <div style={{
+        background:'rgba(10,10,25,0.75)', backdropFilter:'blur(16px)',
+        border:'1px solid rgba(255,255,255,0.1)', borderRadius:'30px',
+        padding:'8px 6px', display:'flex', flexDirection:'column', gap:'4px',
+        boxShadow:'0 8px 32px rgba(0,0,0,0.5)',
+      }}>
+        {EMOJIS.map(e => (
+          <button key={e} className="react-btn" onClick={() => sendReaction(e)} title={`React with ${e}`}>{e}</button>
+        ))}
+      </div>
+    </div>
+  ) : null;
+
+  // ── 💕 Vibing Together badge (when 2 people in room)
+  const vibeJSX = userCount === 2 ? (
+    <div className="vibe-badge" style={{ marginBottom:'16px' }}>
+      <span style={{ fontSize:'18px' }}>💕</span>
+      <div>
+        <p style={{ fontWeight:'700', fontSize:'12px', color:'rgba(255,180,200,0.9)' }}>Vibing Together</p>
+        <p style={{ fontSize:'10px', color:'rgba(255,255,255,0.4)' }}>Just the two of you ✨</p>
+      </div>
+    </div>
+  ) : null;
+
+  // ── 🎁 Dedication Modal
+  const dedicationModalJSX = pendingTrack ? (
+    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.7)', backdropFilter:'blur(8px)', zIndex:1000, display:'flex', alignItems:'center', justifyContent:'center', padding:'20px' }}>
+      <div className="dedication-modal glass" style={{ maxWidth:'400px', width:'100%', borderRadius:'20px', padding:'28px 24px', border:'1px solid rgba(255,100,150,0.25)', boxShadow:'0 24px 80px rgba(0,0,0,0.7)' }}>
+        {/* Track info */}
+        <div style={{ display:'flex', alignItems:'center', gap:'14px', marginBottom:'20px' }}>
+          <img src={pendingTrack.album?.images?.[1]?.url || ''} style={{ width:'56px', height:'56px', borderRadius:'10px', objectFit:'cover', background:'#333', flexShrink:0 }} alt="" />
+          <div style={{ minWidth:0 }}>
+            <p style={{ fontWeight:'800', fontSize:'15px', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{pendingTrack.name}</p>
+            <p style={{ color:'rgba(255,255,255,0.45)', fontSize:'13px' }}>{pendingTrack.artists?.[0]?.name}</p>
+          </div>
+        </div>
+        <p style={{ fontSize:'13px', color:'rgba(255,255,255,0.5)', marginBottom:'14px', textAlign:'center' }}>Add a little dedication? 💌</p>
+        <input
+          className="chat-input"
+          style={{ width:'100%', marginBottom:'16px', borderColor:'rgba(255,100,150,0.3)' }}
+          placeholder="e.g. this one reminds me of you 💕"
+          value={dedicationText}
+          onChange={e => setDedicationText(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && submitWithDedication()}
+          autoFocus
+          maxLength={120}
+        />
+        <div style={{ display:'flex', gap:'10px' }}>
+          <button
+            onClick={submitWithDedication}
+            style={{ flex:1, background:'linear-gradient(135deg, #1DB954, #1ed760)', color:'black', fontWeight:'800', padding:'12px', borderRadius:'12px', border:'none', cursor:'pointer', fontSize:'14px' }}
+          >
+            {dedicationText.trim() ? '💕 Add with dedication' : '🎵 Add to Queue'}
+          </button>
+          <button
+            onClick={() => { setPendingTrack(null); setDedicationText(''); }}
+            style={{ padding:'12px 16px', background:'rgba(255,255,255,0.07)', border:'1px solid rgba(255,255,255,0.1)', borderRadius:'12px', color:'rgba(255,255,255,0.5)', cursor:'pointer', fontSize:'13px' }}
+          >Cancel</button>
+        </div>
+      </div>
+    </div>
+  ) : null;
+
   const trackListJSX = (tracks, isQueue) => tracks.map((track, i) => (
+
 
     <div
       key={track.id + (isQueue ? 'q' : '')}
@@ -756,6 +902,10 @@ export default function Room() {
   return (
     <div style={{ display:'flex', flexDirection:'column', height:'100vh', width:'100vw', overflow:'hidden', backgroundColor:'#060612', color:'white' }}>
       {notifJSX}
+      {confettiJSX}
+      {reactionParticlesJSX}
+      {reactionBarJSX}
+      {dedicationModalJSX}
       {/* Hidden YouTube Player */}
       <div style={{ position:'absolute', left:'-9999px', top:'-9999px', width:'300px', height:'300px', pointerEvents:'none' }}>
         <div id="yt-player-container"></div>
@@ -851,6 +1001,9 @@ export default function Room() {
                   </button>
                 </div>
               </div>
+
+              {/* 💕 Vibe badge */}
+              {vibeJSX}
 
               {/* Listeners + Chat toggle */}
               <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'24px' }}>
