@@ -299,14 +299,33 @@ export default function Room() {
       navigate('/');
     });
 
+    // ── Unified sync-state handler — used for BOTH initial join AND mid-session resync
     socket.on('sync-state', (state) => {
-      setQueue(state.queue || []);
-      setCurrentTrack(state.currentTrack);
-      setIsPlaying(state.isPlaying);
-      if (state.currentTrack?.youtubeId && hasInteractedRef.current) {
-        if (isPlayerReadyRef.current && playerRef.current?.loadVideoById) {
-          playerRef.current.loadVideoById({ videoId: state.currentTrack.youtubeId, startSeconds: state.currentTime || 0 });
-          if (!state.isPlaying) setTimeout(() => playerRef.current?.pauseVideo(), 500);
+      const { queue: sQueue, currentTrack: sTrack, currentTime: sTime, isPlaying: sPlaying } = state;
+      // Always update queue and UI state
+      if (sQueue) setQueue(sQueue);
+      setCurrentTrack(sTrack || null);
+      setIsPlaying(!!sPlaying);
+
+      if (!sTrack?.youtubeId) return;
+      if (!hasInteractedRef.current) return;  // can't touch player before user tap
+
+      if (isPlayerReadyRef.current && playerRef.current) {
+        const playerState = playerRef.current.getPlayerState?.();
+        const correctedTime = (sTime || 0) + 0.5;  // +0.5s to cover network roundtrip
+
+        if (playerState === -1 || playerState === 0) {
+          // Player has no video / ended — load fresh with correct start time
+          playerRef.current.loadVideoById({ videoId: sTrack.youtubeId, startSeconds: correctedTime });
+          if (!sPlaying) setTimeout(() => playerRef.current?.pauseVideo?.(), 600);
+        } else {
+          // Video already loaded — just seek to correct position
+          playerRef.current.seekTo?.(correctedTime, true);
+          if (sPlaying) {
+            setTimeout(() => playerRef.current?.playVideo?.(), 300);
+          } else {
+            playerRef.current.pauseVideo?.();
+          }
         }
       }
     });
@@ -364,21 +383,6 @@ export default function Room() {
       const x = 8 + Math.random() * 84;
       setReactions(prev => [...prev, { emoji, id, x }]);
       setTimeout(() => setReactions(prev => prev.filter(r => r.id !== id)), 3000);
-    });
-
-    // Authoritative state resync — triggered by request-sync (tab switch recovery)
-    socket.on('sync-state', ({ currentTrack: sTrack, currentTime: sTime, isPlaying: sPlaying }) => {
-      if (!sTrack) return;
-      setCurrentTrack(sTrack);
-      setIsPlaying(sPlaying);
-      if (isPlayerReadyRef.current && playerRef.current && hasInteractedRef.current) {
-        // Seek to correct position (add ~0.5s to compensate for network roundtrip)
-        const correctedTime = sTime + 0.5;
-        playerRef.current.seekTo?.(correctedTime, true);
-        if (sPlaying) {
-          setTimeout(() => playerRef.current?.playVideo?.(), 300);
-        }
-      }
     });
 
     socket.on('chat-message', (msg) => {
@@ -493,14 +497,11 @@ export default function Room() {
   const handleEnterRoom = () => {
     setHasInteracted(true);
     hasInteractedRef.current = true;
-    // Request authoritative sync from server — this gives us current position
-    // The sync-state handler will seek to correct time and start playing
-    socketRef.current?.emit('request-sync', roomId);
-    // Also directly start the track if we have one (fallback in case sync-state is slow)
-    if (currentTrack?.youtubeId && isPlayerReadyRef.current) {
-      // loadAndPlay starts from 0 — sync-state will correct position shortly after
-      loadAndPlay(currentTrack.youtubeId);
-    }
+    // Request authoritative sync — sync-state handler will load+seek to correct position
+    // Small delay to ensure hasInteractedRef is true before sync-state fires
+    setTimeout(() => {
+      socketRef.current?.emit('request-sync', roomId);
+    }, 100);
   };
 
   const handleSearch = async (e) => {
