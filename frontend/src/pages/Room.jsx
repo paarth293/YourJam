@@ -76,6 +76,8 @@ export default function Room() {
   const progressIntervalRef = useRef(null);
   const hasInteractedRef = useRef(false);
   const isPlayingRef = useRef(false);   // mirror of isPlaying for use in event listeners
+  const currentTrackRef = useRef(null); // mirror of currentTrack to avoid stale closures
+  useEffect(() => { currentTrackRef.current = currentTrack; }, [currentTrack]);
 
   // ── MediaSession API: register as a media player so browser won't suspend us in background
   useEffect(() => {
@@ -399,12 +401,12 @@ export default function Room() {
 
     socket.on('play', () => {
       setIsPlaying(true);
-      // Always try to play — the server is the source of truth
+      isPlayingRef.current = true;
       if (isPlayerReadyRef.current && playerRef.current) {
         const state = playerRef.current.getPlayerState?.();
-        if (state === -1 && currentTrack?.youtubeId) {
-          // Player has no video loaded yet, load it
-          playerRef.current.loadVideoById(currentTrack.youtubeId);
+        const track = currentTrackRef.current; // use ref, not stale closure
+        if (state === -1 && track?.youtubeId) {
+          playerRef.current.loadVideoById(track.youtubeId);
         } else {
           playerRef.current.playVideo?.();
         }
@@ -903,7 +905,9 @@ export default function Room() {
 
   // ─── Chat Panel JSX ────────────────────────────────────────────────────────
   const chatPanelJSX = (
-    <div style={{ display:'flex', flexDirection:'column', flex:1, minHeight:0 }}>
+    // Mobile: flex:1+minHeight:0 fills tab area correctly
+    // Desktop: height:100% fills the fixed-width sidebar panel
+    <div style={{ display:'flex', flexDirection:'column', ...(isMobile ? { flex:1, minHeight:0 } : { height:'100%' }) }}>
       {/* Chat Header */}
       <div style={{ padding:'16px 20px 12px', borderBottom:'1px solid rgba(255,255,255,0.07)', display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0 }}>
         <div style={{ display:'flex', alignItems:'center', gap:'10px' }}>
@@ -984,7 +988,7 @@ export default function Room() {
   ) : null;
 
   const searchPanelJSX = (
-    <div style={{ display:'flex', flexDirection:'column', flex:1, overflow:'hidden' }}>
+    <div style={{ display:'flex', flexDirection:'column', flex:1, minHeight:0, overflow:'hidden' }}>
       {/* Search input */}
       <div style={{ padding: isMobile ? '12px 16px 8px' : '20px 24px 8px', flexShrink:0 }}>
         <div style={{ position:'relative', maxWidth: isMobile ? '100%' : '520px' }}>
@@ -1024,7 +1028,7 @@ export default function Room() {
       </div>
 
       {/* Results */}
-      <div style={{ flex:1, overflowY:'auto', padding: isMobile ? '4px 8px 16px' : '4px 16px 24px' }}>
+      <div style={{ flex:1, minHeight:0, overflowY:'auto', padding: isMobile ? '4px 8px 16px' : '4px 16px 24px' }}>
         {/* Empty/placeholder state */}
         {!searchTerm && searchResults.length === 0 && (
           <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:'48px 24px', color:'rgba(255,255,255,0.25)', gap:'12px' }}>
@@ -1054,7 +1058,7 @@ export default function Room() {
 
 
   const queuePanelJSX = (
-    <div style={{ flex:1, overflowY:'auto' }}>
+    <div style={{ flex:1, minHeight:0, overflowY:'auto' }}>
       {!isMobile && null}
       <div style={{ padding: isMobile ? '16px' : '16px 24px 24px' }}>
         <p style={{ fontSize: isMobile ? '18px' : '22px', fontWeight:'800', marginBottom:'16px' }}>Up Next</p>
