@@ -4,58 +4,19 @@ import io from 'socket.io-client';
 import axios from 'axios';
 import { Play, Pause, SkipForward, Search, Users, Copy, CheckCircle2, Music, ListMusic } from 'lucide-react';
 
-// Bulletproof YouTube player helper
-// Instead of calling playerRef.current?.loadVideoById directly everywhere,
-// we use this helper that queues the command if the player isn't ready yet.
-
 const SOCKET_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
 
-// ─── Styles ────────────────────────────────────────────────────────────────
-const S = {
-  root: { display: 'flex', flexDirection: 'column', height: '100vh', width: '100vw', overflow: 'hidden', backgroundColor: '#121212', color: 'white' },
-  main: { display: 'flex', flex: 1, overflow: 'hidden' },
-  sidebar: { width: '240px', background: '#000', padding: '24px 16px', display: 'flex', flexDirection: 'column', flexShrink: 0 },
-  logo: { display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '32px', paddingLeft: '8px' },
-  logoText: { fontSize: '20px', fontWeight: '800' },
-  sectionLabel: { color: '#b3b3b3', fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '1px', padding: '0 8px', marginBottom: '12px' },
-  roomCard: { background: '#181818', borderRadius: '8px', padding: '16px', marginBottom: '16px' },
-  roomCodeLabel: { color: '#b3b3b3', fontSize: '11px', marginBottom: '6px' },
-  roomCodeRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
-  roomCode: { fontFamily: 'monospace', fontSize: '22px', fontWeight: '800', letterSpacing: '4px', color: '#1DB954' },
-  userCount: { display: 'flex', alignItems: 'center', gap: '6px', color: '#b3b3b3', fontSize: '13px', marginTop: '12px', paddingLeft: '0' },
-  centerArea: { flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'linear-gradient(180deg, #2a2a2a 0%, #121212 300px)' },
-  searchBar: { padding: '20px 24px 8px', flexShrink: 0 },
-  searchWrap: { position: 'relative', maxWidth: '480px' },
-  searchIcon: { position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)', color: '#b3b3b3', pointerEvents: 'none' },
-  searchInput: { width: '100%', background: '#242424', border: 'none', borderRadius: '50px', color: 'white', padding: '12px 20px 12px 48px', fontSize: '14px', outline: 'none', transition: 'background 0.2s', boxSizing: 'border-box' },
-  scrollArea: { flex: 1, overflowY: 'auto', padding: '16px 24px 24px' },
-  sectionTitle: { fontSize: '22px', fontWeight: '800', marginBottom: '20px' },
-  trackRow: { display: 'flex', alignItems: 'center', padding: '8px', borderRadius: '6px', cursor: 'pointer', transition: 'background 0.15s', gap: '14px', position: 'relative' },
-  trackArt: { width: '42px', height: '42px', borderRadius: '4px', objectFit: 'cover', flexShrink: 0, background: '#333' },
-  trackName: { fontWeight: '500', fontSize: '15px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '260px' },
-  trackArtist: { color: '#b3b3b3', fontSize: '13px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '260px' },
-  addBtn: { marginLeft: 'auto', border: '1px solid #b3b3b3', background: 'transparent', color: 'white', borderRadius: '50px', padding: '5px 14px', fontSize: '12px', fontWeight: '700', cursor: 'pointer', transition: 'border-color 0.15s, transform 0.1s', flexShrink: 0, letterSpacing: '0.5px' },
-  emptyQueue: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '64px 24px', color: '#b3b3b3', border: '1px dashed rgba(255,255,255,0.1)', borderRadius: '12px', gap: '12px' },
-  queueNum: { color: '#b3b3b3', width: '20px', textAlign: 'center', fontSize: '14px', flexShrink: 0 },
-  playerBar: { height: '90px', background: '#181818', borderTop: '1px solid #282828', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 16px', flexShrink: 0 },
-  nowPlayingWrap: { display: 'flex', alignItems: 'center', gap: '14px', width: '30%', minWidth: 0 },
-  nowPlayingArt: { width: '56px', height: '56px', borderRadius: '4px', objectFit: 'cover', flexShrink: 0 },
-  nowPlayingText: { minWidth: 0 },
-  nowPlayingName: { fontWeight: '600', fontSize: '14px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
-  nowPlayingArtist: { color: '#b3b3b3', fontSize: '12px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
-  controlsWrap: { display: 'flex', flexDirection: 'column', alignItems: 'center', width: '40%', maxWidth: '500px' },
-  controlBtns: { display: 'flex', alignItems: 'center', gap: '20px', marginBottom: '8px' },
-  playBtn: { width: '38px', height: '38px', borderRadius: '50%', background: 'white', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'transform 0.1s' },
-  skipBtn: { background: 'transparent', border: 'none', color: '#b3b3b3', cursor: 'pointer', display: 'flex', alignItems: 'center', transition: 'color 0.15s' },
-  progressRow: { display: 'flex', alignItems: 'center', gap: '10px', width: '100%', fontSize: '11px', color: '#b3b3b3' },
-  progressTrack: { flex: 1, height: '4px', background: '#4d4d4d', borderRadius: '4px', overflow: 'hidden', cursor: 'pointer', position: 'relative' },
-  progressFill: { height: '100%', background: 'white', borderRadius: '4px', transition: 'width 0.5s linear' },
-  rightControls: { width: '30%', display: 'flex', justifyContent: 'flex-end', alignItems: 'center' },
-  // Interaction overlay
-  overlay: { flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, rgba(29,183,84,0.1) 0%, #121212 60%)' },
-  overlayCard: { textAlign: 'center', padding: '48px 40px', background: '#181818', borderRadius: '16px', maxWidth: '440px', border: '1px solid rgba(255,255,255,0.05)', boxShadow: '0 24px 60px rgba(0,0,0,0.5)' },
-  enterBtn: { background: '#1DB954', color: 'black', fontWeight: '700', padding: '14px 40px', borderRadius: '50px', border: 'none', cursor: 'pointer', fontSize: '16px', transition: 'transform 0.15s' },
-};
+// Pre-computed stable EQ bar configs — defined outside component so Math.random never re-runs
+const EQ_BARS = Array.from({ length: 32 }, (_, i) => ({
+  height: Math.round(10 + Math.abs(Math.sin(i * 0.65)) * 26),   // 10–36px tall
+  delay: `${((i * 137) % 900) / 1000}s`,                         // golden-ratio spread
+  duration: `${0.45 + (i % 7) * 0.07}s`,                         // 0.45–0.92s cycle
+}));
+
+// Sidebar section label style
+const LABEL = { color:'rgba(255,255,255,0.4)', fontSize:'10px', fontWeight:'700', textTransform:'uppercase', letterSpacing:'2px', marginBottom:'10px' };
+
+
 
 export default function Room() {
   const { roomId } = useParams();
@@ -411,33 +372,58 @@ export default function Room() {
   const progressPct = duration > 0 ? (progress / duration) * 100 : 0;
   const dc = dominantColor; // shorthand
 
-  // ─── Hero visual for desktop center ────────────────────────────────────────
+  // ─── Hero visual ────────────────────────────────────────────────────────────
   const heroJSX = currentTrack ? (
-    <div style={{ position:'relative', overflow:'hidden', flexShrink:0, height:'280px', display:'flex', alignItems:'center', justifyContent:'center' }}>
-      {/* Blurred album art bg */}
-      <div style={{ position:'absolute', inset:0, backgroundImage:`url(${currentTrack.albumArt})`, backgroundSize:'cover', backgroundPosition:'center', filter:'blur(60px) saturate(2.5) brightness(0.55)', transform:'scale(1.4)', zIndex:0 }} />
-      {/* Dark gradient overlay */}
-      <div style={{ position:'absolute', inset:0, background:`linear-gradient(to bottom, rgba(0,0,0,0.1) 0%, rgba(${dc},0.15) 50%, #121212 100%)`, zIndex:1 }} />
-      {/* Floating orbs */}
+    <div style={{ position:'relative', overflow:'hidden', flexShrink:0, height:'300px', display:'flex', alignItems:'center', justifyContent:'center' }}>
+      {/* Full blurred album art backdrop */}
+      <div style={{ position:'absolute', inset:'-20px', backgroundImage:`url(${currentTrack.albumArt})`, backgroundSize:'cover', backgroundPosition:'center', filter:'blur(70px) saturate(3) brightness(0.45)', zIndex:0 }} />
+      {/* Color gradient overlay */}
+      <div style={{ position:'absolute', inset:0, background:`linear-gradient(135deg, rgba(${dc},0.08) 0%, rgba(0,0,0,0.7) 100%)`, zIndex:1 }} />
+      {/* Bottom fade to #060612 */}
+      <div style={{ position:'absolute', bottom:0, left:0, right:0, height:'80px', background:'linear-gradient(to bottom, transparent, #060612)', zIndex:2 }} />
+      {/* Floating aura orbs */}
       {isPlaying && [0,1,2].map(i => (
-        <div key={i} className="aura" style={{ width:`${120+i*60}px`, height:`${120+i*60}px`, top:`${10+i*25}%`, left:`${15+i*28}%`, opacity:0.15, animationDelay:`${i*1.1}s`, zIndex:1 }} />
+        <div key={i} className="aura" style={{ width:`${100+i*70}px`, height:`${100+i*70}px`, top:`${5+i*30}%`, left:`${10+i*30}%`, opacity:0.12, animationDelay:`${i*1.2}s`, background:`radial-gradient(circle, rgba(${dc},1) 0%, transparent 70%)`, zIndex:1 }} />
       ))}
-      {/* Content */}
-      <div style={{ position:'relative', zIndex:2, display:'flex', alignItems:'center', gap:'28px', padding:'0 32px', width:'100%' }}>
-        {/* Spinning vinyl */}
-        <div className={isPlaying ? 'glow-playing' : ''} style={{ flexShrink:0, borderRadius:'50%', width:'160px', height:'160px', boxShadow:`0 8px 40px rgba(${dc},0.4)` }}>
-          <img src={currentTrack.albumArt} className={isPlaying ? 'vinyl-spinning' : 'vinyl-paused'} style={{ width:'160px', height:'160px', objectFit:'cover', display:'block' }} alt="" />
+      {/* Content row */}
+      <div style={{ position:'relative', zIndex:3, display:'flex', alignItems:'center', gap:'32px', padding:'0 40px', width:'100%' }}>
+        {/* Vinyl with concentric rings */}
+        <div style={{ flexShrink:0, position:'relative', width:'180px', height:'180px', display:'flex', alignItems:'center', justifyContent:'center' }}>
+          {/* Rings */}
+          {isPlaying && [0,1,2].map(i => (
+            <div key={i} className="ring" style={{ width:'180px', height:'180px', '--ring-color':`rgba(${dc},0.5)`, animationDelay:`${i*0.8}s`, position:'absolute' }} />
+          ))}
+          <img
+            src={currentTrack.albumArt}
+            className={isPlaying ? 'vinyl-spinning' : 'vinyl-paused'}
+            style={{ width:'160px', height:'160px', borderRadius:'50%', objectFit:'cover', display:'block', boxShadow:`0 0 40px rgba(${dc},0.5), 0 20px 60px rgba(0,0,0,0.8)`, '--glow-color':`rgba(${dc},0.5)` }}
+            alt=""
+          />
         </div>
-        {/* Info */}
+        {/* Info + waveform */}
         <div style={{ flex:1, minWidth:0 }}>
-          <p style={{ fontSize:'11px', fontWeight:'700', letterSpacing:'3px', textTransform:'uppercase', color:`rgba(${dc},1)`, marginBottom:'8px', opacity:0.9 }}>Now Playing</p>
-          <h2 style={{ fontSize:'28px', fontWeight:'900', lineHeight:'1.2', marginBottom:'6px', textShadow:`0 0 30px rgba(${dc},0.6)` }}>{currentTrack.name}</h2>
-          <p style={{ fontSize:'15px', color:'rgba(255,255,255,0.65)', marginBottom:'20px' }}>{currentTrack.artist}</p>
-          {/* Waveform visualizer */}
-          <div style={{ display:'flex', alignItems:'flex-end', gap:'3px', height:'36px' }}>
-            {Array.from({length:24}).map((_,i) => (
-              <div key={i} className={`eq-bar${isPlaying ? '' : ' eq-bar-paused'}`}
-                style={{ flex:1, background:`rgba(${dc},${0.5+Math.random()*0.5})`, height:`${8+Math.sin(i*0.8)*12}px`, animationDelay:`${(i*0.07)%0.9}s`, animationDuration:`${0.5+Math.random()*0.5}s` }}
+          <p style={{ fontSize:'10px', fontWeight:'700', letterSpacing:'4px', textTransform:'uppercase', color:`rgba(${dc},1)`, marginBottom:'10px' }}>
+            ◆ Now Playing ◆
+          </p>
+          <h2 style={{ fontSize:'30px', fontWeight:'900', lineHeight:'1.15', marginBottom:'6px', textShadow:`0 0 40px rgba(${dc},0.8)`, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+            {currentTrack.name}
+          </h2>
+          <p style={{ fontSize:'15px', color:'rgba(255,255,255,0.55)', marginBottom:'24px', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+            {currentTrack.artist}
+          </p>
+          {/* Proper EQ bars using pre-computed EQ_BARS */}
+          <div style={{ display:'flex', alignItems:'flex-end', gap:'2px', height:'44px' }}>
+            {EQ_BARS.map((bar, i) => (
+              <div
+                key={i}
+                className={`eq-bar${isPlaying ? '' : ' eq-bar-paused'}`}
+                style={{
+                  flex:1,
+                  height:`${bar.height}px`,
+                  background:`rgba(${dc},${0.6 + (i%3)*0.13})`,
+                  animationDelay: bar.delay,
+                  animationDuration: bar.duration,
+                }}
               />
             ))}
           </div>
@@ -445,16 +431,16 @@ export default function Room() {
       </div>
     </div>
   ) : (
-    <div style={{ flexShrink:0, height:'200px', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:'12px', color:'#b3b3b3', position:'relative', overflow:'hidden' }}>
-      <div style={{ position:'absolute', inset:0, background:'radial-gradient(ellipse at 50% 100%, rgba(29,185,84,0.06) 0%, transparent 70%)' }} />
-      <div style={{ fontSize:'56px', animation:'aura-pulse 3s ease-in-out infinite' }}>🎵</div>
-      <p style={{ fontWeight:'700', fontSize:'17px' }}>Add a song to start the Jam!</p>
-      <p style={{ fontSize:'13px', opacity:0.6 }}>Search for a track to get things going</p>
+    <div style={{ flexShrink:0, height:'220px', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:'14px', position:'relative', overflow:'hidden' }}>
+      <div style={{ position:'absolute', inset:0, background:'radial-gradient(ellipse at 50% 120%, rgba(29,185,84,0.08) 0%, transparent 65%)' }} />
+      <div style={{ fontSize:'60px', filter:'drop-shadow(0 0 24px rgba(29,185,84,0.4))', animation:'aura-pulse 3s ease-in-out infinite' }}>🎵</div>
+      <p style={{ fontWeight:'800', fontSize:'18px', color:'white' }}>Start the Jam!</p>
+      <p style={{ fontSize:'13px', color:'rgba(255,255,255,0.4)' }}>Search for a song and let it rip 🔥</p>
     </div>
   );
 
-
   const trackListJSX = (tracks, isQueue) => tracks.map((track, i) => (
+
     <div
       key={track.id + (isQueue ? 'q' : '')}
       style={{ display:'flex', alignItems:'center', padding:'10px 8px', borderRadius:'6px', gap:'12px', background: hoveredTrack === track.id+(isQueue?'q':'') ? 'rgba(255,255,255,0.07)' : 'transparent' }}
@@ -633,28 +619,35 @@ export default function Room() {
 
   // ─── Main Room UI ─────────────────────────────────────────────────────────
   return (
-    <div style={{ display:'flex', flexDirection:'column', height:'100vh', width:'100vw', overflow:'hidden', backgroundColor:'#121212', color:'white' }}>
+    <div style={{ display:'flex', flexDirection:'column', height:'100vh', width:'100vw', overflow:'hidden', backgroundColor:'#060612', color:'white' }}>
+
       {/* Hidden YouTube Player */}
       <div style={{ position:'absolute', left:'-9999px', top:'-9999px', width:'300px', height:'300px', pointerEvents:'none' }}>
         <div id="yt-player-container"></div>
       </div>
 
       {!hasInteracted ? (
-        <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', background:'linear-gradient(135deg, rgba(29,183,84,0.1) 0%, #121212 60%)', padding:'20px' }}>
-          <div style={{ textAlign:'center', padding:'48px 32px', background:'#181818', borderRadius:'16px', maxWidth:'400px', width:'100%', border:'1px solid rgba(255,255,255,0.05)', boxShadow:'0 24px 60px rgba(0,0,0,0.5)' }}>
-            <div style={{ display:'flex', justifyContent:'center', marginBottom:'24px' }}>
-              <div style={{ width:'72px', height:'72px', background:'#1DB954', borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', boxShadow:'0 0 40px rgba(29,185,84,0.4)' }}>
-                <Music size={36} color="black" />
+        <div className="grid-bg" style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', background:'#060612', padding:'20px' }}>
+          {/* Radial glow */}
+          <div style={{ position:'absolute', width:'600px', height:'600px', borderRadius:'50%', background:'radial-gradient(circle, rgba(29,185,84,0.12) 0%, transparent 70%)', pointerEvents:'none' }} />
+          <div className="glass" style={{ textAlign:'center', padding:'48px 40px', borderRadius:'24px', maxWidth:'420px', width:'100%', boxShadow:'0 32px 80px rgba(0,0,0,0.7)', border:'1px solid rgba(29,185,84,0.15)', position:'relative' }}>
+            <div style={{ display:'flex', justifyContent:'center', marginBottom:'28px' }}>
+              <div style={{ width:'80px', height:'80px', background:'#1DB954', borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', boxShadow:'0 0 50px rgba(29,185,84,0.6)', animation:'pulse-glow 2s ease-in-out infinite' }}>
+                <Music size={38} color="black" />
               </div>
             </div>
-            <h2 style={{ fontSize:'24px', fontWeight:'800', marginBottom:'10px' }}>Ready to join the Jam?</h2>
-            <p style={{ color:'#b3b3b3', marginBottom:'28px', lineHeight:'1.6', fontSize:'14px' }}>
-              Room <strong style={{ color:'#1DB954', fontFamily:'monospace', letterSpacing:'2px' }}>{roomId}</strong><br />
-              Click below so your browser allows audio to play.
+            <h2 style={{ fontSize:'26px', fontWeight:'900', marginBottom:'10px', letterSpacing:'-0.5px' }}>Ready to Jam? 🎵</h2>
+            <p style={{ color:'rgba(255,255,255,0.5)', marginBottom:'28px', lineHeight:'1.7', fontSize:'14px' }}>
+              Room <strong style={{ color:'#1DB954', fontFamily:'monospace', letterSpacing:'3px', fontSize:'16px' }}>{roomId}</strong><br />
+              Tap below to enable audio playback.
             </p>
-            <button onClick={handleEnterRoom} style={{ background:'#1DB954', color:'black', fontWeight:'700', padding:'14px 40px', borderRadius:'50px', border:'none', cursor:'pointer', fontSize:'16px', width:'100%' }}>
-              Enter the Jam 🎵
+            <button onClick={handleEnterRoom} style={{ background:'#1DB954', color:'black', fontWeight:'800', padding:'15px 40px', borderRadius:'50px', border:'none', cursor:'pointer', fontSize:'16px', width:'100%', letterSpacing:'0.5px', transition:'transform 0.15s, box-shadow 0.15s', boxShadow:'0 0 24px rgba(29,185,84,0.4)' }}
+              onMouseEnter={e => { e.currentTarget.style.transform='scale(1.02)'; e.currentTarget.style.boxShadow='0 0 40px rgba(29,185,84,0.6)'; }}
+              onMouseLeave={e => { e.currentTarget.style.transform='scale(1)'; e.currentTarget.style.boxShadow='0 0 24px rgba(29,185,84,0.4)'; }}
+            >
+              Enter the Jam ⚡
             </button>
+
           </div>
         </div>
       ) : isMobile ? (
@@ -699,46 +692,58 @@ export default function Room() {
         /* ── DESKTOP LAYOUT ── */
         <>
           <div style={{ display:'flex', flex:1, overflow:'hidden' }}>
-            {/* Sidebar */}
-            <div style={{ width:'240px', background:'#000', padding:'24px 16px', display:'flex', flexDirection:'column', flexShrink:0 }}>
-              <div style={{ display:'flex', alignItems:'center', gap:'10px', marginBottom:'32px', paddingLeft:'8px' }}>
-                <Music color="#1DB954" size={28} />
-                <span style={{ fontSize:'20px', fontWeight:'800' }}>YourJam</span>
-              </div>
-              <div style={{ marginBottom:'24px' }}>
-                <p style={S.sectionLabel}>Your Room</p>
-                <div style={S.roomCard}>
-                  <div style={S.roomCodeLabel}>Room Code</div>
-                  <div style={S.roomCodeRow}>
-                    <span style={S.roomCode}>{roomId}</span>
-                    <button onClick={copyRoomCode} style={{ background:'transparent', border:'none', cursor:'pointer', color:'#b3b3b3', display:'flex' }}>
-                      {copied ? <CheckCircle2 size={18} color="#1DB954" /> : <Copy size={18} color="#b3b3b3" />}
-                    </button>
-                  </div>
+            {/* Glass Sidebar */}
+            <div className="glass-dark" style={{ width:'220px', padding:'24px 16px', display:'flex', flexDirection:'column', flexShrink:0, borderRight:'1px solid rgba(255,255,255,0.06)', zIndex:10 }}>
+              {/* Logo */}
+              <div style={{ display:'flex', alignItems:'center', gap:'10px', marginBottom:'28px' }}>
+                <div style={{ width:'34px', height:'34px', background:'#1DB954', borderRadius:'10px', display:'flex', alignItems:'center', justifyContent:'center', boxShadow:'0 0 20px rgba(29,185,84,0.5)' }}>
+                  <Music size={18} color="black" />
                 </div>
-                <div style={S.userCount}><Users size={15} /><span>{userCount} listener{userCount!==1?'s':''}</span></div>
+                <span style={{ fontSize:'18px', fontWeight:'800', letterSpacing:'-0.5px' }}>YourJam</span>
               </div>
+
+              {/* Room Code */}
+              <p style={LABEL}>Room</p>
+              <div style={{ background:'rgba(29,185,84,0.08)', border:'1px solid rgba(29,185,84,0.2)', borderRadius:'10px', padding:'14px', marginBottom:'16px' }}>
+                <p style={{ fontSize:'10px', color:'rgba(255,255,255,0.4)', marginBottom:'6px', letterSpacing:'1px' }}>ROOM CODE</p>
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                  <span style={{ fontFamily:'monospace', fontSize:'20px', fontWeight:'900', letterSpacing:'4px', color:'#1DB954', textShadow:'0 0 12px rgba(29,185,84,0.5)' }}>{roomId}</span>
+                  <button onClick={copyRoomCode} style={{ background:'transparent', border:'none', cursor:'pointer', padding:'4px', borderRadius:'6px' }}>
+                    {copied ? <CheckCircle2 size={17} color="#1DB954" /> : <Copy size={17} color="rgba(255,255,255,0.4)" />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Listeners */}
+              <div style={{ display:'flex', alignItems:'center', gap:'8px', color:'rgba(255,255,255,0.4)', fontSize:'13px', marginBottom:'24px' }}>
+                <Users size={14} /><span>{userCount} listener{userCount!==1?'s':''}</span>
+              </div>
+
+              {/* Mini now-playing in sidebar */}
               {currentTrack && (
                 <div style={{ marginTop:'auto' }}>
-                  <p style={S.sectionLabel}>Now Playing</p>
-                  <div style={{ borderRadius:'8px', overflow:'hidden', boxShadow:'0 8px 24px rgba(0,0,0,0.5)' }}>
-                    <img src={currentTrack.albumArt} alt="" style={{ width:'100%', aspectRatio:'1', objectFit:'cover', display:'block' }} />
+                  <p style={LABEL}>Now Playing</p>
+                  <div style={{ position:'relative', borderRadius:'12px', overflow:'hidden', boxShadow:`0 8px 32px rgba(${dc},0.3)` }}>
+                    <img src={currentTrack.albumArt} alt="" style={{ width:'100%', aspectRatio:'1', objectFit:'cover', display:'block', filter: isPlaying ? 'none' : 'brightness(0.6)' }} />
+                    {isPlaying && <div style={{ position:'absolute', inset:0, background:`linear-gradient(to top, rgba(${dc},0.3), transparent)` }} />}
                   </div>
-                  <p style={{ fontWeight:'700', marginTop:'12px', fontSize:'14px', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{currentTrack.name}</p>
-                  <p style={{ color:'#b3b3b3', fontSize:'13px', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{currentTrack.artist}</p>
+                  <p style={{ fontWeight:'700', marginTop:'10px', fontSize:'13px', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', color: isPlaying ? '#1DB954' : 'white', transition:'color 0.3s' }}>{currentTrack.name}</p>
+                  <p style={{ color:'rgba(255,255,255,0.4)', fontSize:'12px', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{currentTrack.artist}</p>
                 </div>
               )}
             </div>
-            {/* Center Area */}
-            <div style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden', background:'#121212' }}>
+
+            {/* Center Area — hero + search/queue */}
+            <div className="grid-bg" style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden', background:'#060612' }}>
               {heroJSX}
-              <div style={{ flex:1, overflow:'hidden', display:'flex', flexDirection:'column' }}>
+              <div style={{ flex:1, overflow:'hidden', display:'flex', flexDirection:'column', background:'rgba(6,6,18,0.9)' }}>
                 {searchPanelJSX}
                 {!searchTerm && queuePanelJSX}
               </div>
             </div>
-            {/* Lyrics Panel — always visible on desktop when a song is loaded */}
-            <div style={{ width: lyrics.length || lyricsLoading ? '320px' : '0', flexShrink:0, overflow:'hidden', borderLeft: lyrics.length || lyricsLoading ? '1px solid #282828' : 'none', transition:'width 0.3s ease', display:'flex', flexDirection:'column', background:'#0d0d0d' }}>
+
+            {/* Lyrics Panel */}
+            <div className="glass-dark" style={{ width: lyrics.length || lyricsLoading ? '300px' : '0', flexShrink:0, overflow:'hidden', borderLeft:'1px solid rgba(255,255,255,0.06)', transition:'width 0.35s ease', display:'flex', flexDirection:'column' }}>
               {lyricsPanelJSX}
             </div>
           </div>
@@ -746,6 +751,7 @@ export default function Room() {
         </>
       )}
     </div>
+
   );
 }
 

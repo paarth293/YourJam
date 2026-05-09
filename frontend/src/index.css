@@ -1,107 +1,181 @@
-@import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700;800&display=swap');
 
-@theme {
-  --color-spotify-green: #1DB954;
-  --color-spotify-dark: #121212;
-  --color-spotify-card: #181818;
-  --color-spotify-card-hover: #282828;
-  --color-spotify-light: #b3b3b3;
-}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-/* Base Styles */
-*, *::before, *::after {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
+:root {
+  --green: #1DB954;
+  --green-dim: rgba(29,185,84,0.15);
+  --green-glow: rgba(29,185,84,0.5);
+  --dark: #060612;
+  --card: rgba(255,255,255,0.04);
+  --border: rgba(255,255,255,0.08);
+  --text-dim: rgba(255,255,255,0.45);
 }
 
 body {
-  background-color: var(--color-spotify-dark);
+  background: var(--dark);
   color: white;
-  font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+  font-family: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
-  overflow-x: hidden;
+  overflow: hidden;
 }
 
-/* Custom Scrollbar for Spotify look */
-::-webkit-scrollbar {
-  width: 8px;
+/* ── Scrollbar ─────────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 4px; }
+
+/* ── Grid background ───────────────────────────────────────────────────────── */
+.grid-bg {
+  background-image:
+    linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
+  background-size: 40px 40px;
 }
 
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-::-webkit-scrollbar-thumb {
-  background-color: rgba(255, 255, 255, 0.3);
-  border-radius: 10px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(255, 255, 255, 0.5);
-}
-
-/* Glassmorphism utility */
+/* ── Glass panels ──────────────────────────────────────────────────────────── */
 .glass {
-  background: rgba(24, 24, 24, 0.6);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border-top: 1px solid rgba(255,255,255,0.1);
+  background: rgba(255,255,255,0.04);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255,255,255,0.08);
+}
+.glass-dark {
+  background: rgba(0,0,0,0.4);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255,255,255,0.06);
 }
 
-/* Spotify color utility classes */
-.bg-spotify-dark { background-color: var(--color-spotify-dark); }
-.bg-spotify-card { background-color: var(--color-spotify-card); }
-.bg-spotify-green { background-color: var(--color-spotify-green); }
-.text-spotify-green { color: var(--color-spotify-green); }
-.text-spotify-light { color: var(--color-spotify-light); }
-.border-spotify-green { border-color: var(--color-spotify-green); }
-.border-spotify-light { border-color: var(--color-spotify-light); }
-.focus\:border-spotify-green:focus { border-color: var(--color-spotify-green); }
-.hover\:bg-spotify-green:hover { background-color: var(--color-spotify-green); }
-.hover\:border-white:hover { border-color: white; }
+/* ── EQ Bars — 8 unique keyframe patterns ──────────────────────────────────── */
+@keyframes eq-a { 0%,100%{transform:scaleY(0.2)} 20%{transform:scaleY(1)} 60%{transform:scaleY(0.5)} }
+@keyframes eq-b { 0%,100%{transform:scaleY(0.5)} 40%{transform:scaleY(0.1)} 70%{transform:scaleY(1)} }
+@keyframes eq-c { 0%,100%{transform:scaleY(0.8)} 30%{transform:scaleY(0.15)} 80%{transform:scaleY(1)} }
+@keyframes eq-d { 0%,100%{transform:scaleY(0.3)} 50%{transform:scaleY(1)} }
+@keyframes eq-e { 0%,100%{transform:scaleY(1)} 25%{transform:scaleY(0.2)} 75%{transform:scaleY(0.7)} }
+@keyframes eq-f { 0%,100%{transform:scaleY(0.4)} 35%{transform:scaleY(1)} 65%{transform:scaleY(0.3)} }
+@keyframes eq-g { 0%,100%{transform:scaleY(0.6)} 45%{transform:scaleY(0.1)} 90%{transform:scaleY(1)} }
+@keyframes eq-h { 0%,100%{transform:scaleY(0.2)} 10%{transform:scaleY(1)} 55%{transform:scaleY(0.6)} }
 
-/* ─── Equalizer Bars ─────────────────────────────────────────────────────── */
-@keyframes eq1 { 0%,100%{height:4px} 25%{height:16px} 75%{height:8px} }
-@keyframes eq2 { 0%,100%{height:12px} 40%{height:4px} 80%{height:20px} }
-@keyframes eq3 { 0%,100%{height:8px} 30%{height:20px} 60%{height:4px} }
-@keyframes eq4 { 0%,100%{height:16px} 50%{height:4px} }
-
-.eq-bar { width:3px; background:#1DB954; border-radius:2px; }
-.eq-bar:nth-child(1) { animation: eq1 0.8s ease-in-out infinite; }
-.eq-bar:nth-child(2) { animation: eq2 0.6s ease-in-out infinite; }
-.eq-bar:nth-child(3) { animation: eq3 0.9s ease-in-out infinite; }
-.eq-bar:nth-child(4) { animation: eq4 0.7s ease-in-out infinite; }
+.eq-bar {
+  border-radius: 2px 2px 0 0;
+  transform-origin: bottom;
+  transition: background 0.5s ease;
+}
+.eq-bar:nth-child(8n+1) { animation: eq-a var(--eq-dur, 0.6s) ease-in-out infinite; }
+.eq-bar:nth-child(8n+2) { animation: eq-b var(--eq-dur, 0.7s) ease-in-out infinite; }
+.eq-bar:nth-child(8n+3) { animation: eq-c var(--eq-dur, 0.5s) ease-in-out infinite; }
+.eq-bar:nth-child(8n+4) { animation: eq-d var(--eq-dur, 0.8s) ease-in-out infinite; }
+.eq-bar:nth-child(8n+5) { animation: eq-e var(--eq-dur, 0.65s) ease-in-out infinite; }
+.eq-bar:nth-child(8n+6) { animation: eq-f var(--eq-dur, 0.55s) ease-in-out infinite; }
+.eq-bar:nth-child(8n+7) { animation: eq-g var(--eq-dur, 0.75s) ease-in-out infinite; }
+.eq-bar:nth-child(8n+8) { animation: eq-h var(--eq-dur, 0.9s) ease-in-out infinite; }
 .eq-bar-paused { animation-play-state: paused !important; }
 
-/* ─── Vinyl Spin ─────────────────────────────────────────────────────────── */
-@keyframes vinyl-spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
-.vinyl-spinning { animation: vinyl-spin 4s linear infinite; border-radius:50% !important; }
-.vinyl-paused   { animation: vinyl-spin 4s linear infinite paused; border-radius:50% !important; }
+/* ── Vinyl spin ────────────────────────────────────────────────────────────── */
+@keyframes vinyl-spin { to { transform: rotate(360deg); } }
+.vinyl-spinning { animation: vinyl-spin 5s linear infinite; }
+.vinyl-paused   { animation: vinyl-spin 5s linear infinite paused; }
 
-/* ─── Pulse Glow ─────────────────────────────────────────────────────────── */
+/* ── Pulse glow ────────────────────────────────────────────────────────────── */
 @keyframes pulse-glow {
-  0%,100% { box-shadow: 0 0 16px rgba(29,185,84,0.3), 0 0 32px rgba(29,185,84,0.1); }
-  50%     { box-shadow: 0 0 40px rgba(29,185,84,0.7), 0 0 80px rgba(29,185,84,0.3); }
+  0%,100% { box-shadow: 0 0 20px rgba(29,185,84,0.3), 0 0 60px rgba(29,185,84,0.1); }
+  50%     { box-shadow: 0 0 40px rgba(29,185,84,0.7), 0 0 100px rgba(29,185,84,0.25); }
 }
-.glow-playing { animation: pulse-glow 2s ease-in-out infinite; }
+.glow-playing { animation: pulse-glow 2.5s ease-in-out infinite; }
 
-/* ─── Progress Shimmer ───────────────────────────────────────────────────── */
-@keyframes shimmer { 0%{background-position:-200px 0} 100%{background-position:200px 0} }
+/* ── Custom glow (uses CSS var for dynamic album color) ─────────────────────── */
+@keyframes custom-glow {
+  0%,100% { box-shadow: 0 0 24px var(--glow-color, rgba(29,185,84,0.4)), 0 0 60px var(--glow-color, rgba(29,185,84,0.15)); }
+  50%     { box-shadow: 0 0 50px var(--glow-color, rgba(29,185,84,0.7)), 0 0 120px var(--glow-color, rgba(29,185,84,0.3)); }
+}
+.custom-glow { animation: custom-glow 2.5s ease-in-out infinite; }
+
+/* ── Concentric rings ──────────────────────────────────────────────────────── */
+@keyframes ring-expand {
+  0%   { transform: scale(1); opacity: 0.6; }
+  100% { transform: scale(2.5); opacity: 0; }
+}
+.ring {
+  position: absolute;
+  border-radius: 50%;
+  border: 1px solid var(--ring-color, rgba(29,185,84,0.4));
+  animation: ring-expand 2.5s ease-out infinite;
+  pointer-events: none;
+}
+.ring:nth-child(2) { animation-delay: 0.8s; }
+.ring:nth-child(3) { animation-delay: 1.6s; }
+
+/* ── Floating particles ────────────────────────────────────────────────────── */
+@keyframes float-up {
+  0%   { transform: translateY(0) translateX(0) scale(1); opacity: 0.7; }
+  50%  { transform: translateY(-40px) translateX(10px) scale(1.2); opacity: 1; }
+  100% { transform: translateY(-90px) translateX(-5px) scale(0.5); opacity: 0; }
+}
+.particle {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+  animation: float-up 3s ease-in-out infinite;
+}
+
+/* ── Progress shimmer ──────────────────────────────────────────────────────── */
+@keyframes shimmer { 0%{background-position:-400px 0} 100%{background-position:400px 0} }
 .progress-playing {
-  background: linear-gradient(90deg,#17a349 0%,#1ed760 50%,#17a349 100%);
-  background-size: 200px 100%;
-  animation: shimmer 1.5s linear infinite;
+  background: linear-gradient(90deg, #0ea347 0%, #1DB954 40%, #1ed760 60%, #0ea347 100%);
+  background-size: 400px 100%;
+  animation: shimmer 1.8s linear infinite;
 }
 
-/* ─── Background Aura ────────────────────────────────────────────────────── */
+/* ── Neon border rotate ────────────────────────────────────────────────────── */
+@keyframes border-rotate {
+  from { --angle: 0deg; }
+  to   { --angle: 360deg; }
+}
+@property --angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+.neon-border {
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  background-image: conic-gradient(from var(--angle), transparent 70%, var(--green) 80%, transparent 90%);
+  animation: border-rotate 4s linear infinite;
+}
+
+/* ── Lyric active line ─────────────────────────────────────────────────────── */
+@keyframes lyric-glow {
+  0%,100% { text-shadow: 0 0 12px var(--green-glow); }
+  50%     { text-shadow: 0 0 28px var(--green-glow), 0 0 50px var(--green-glow); }
+}
+.lyric-active { animation: lyric-glow 2s ease-in-out infinite; }
+
+/* ── Aura pulse ────────────────────────────────────────────────────────────── */
 @keyframes aura-pulse {
-  0%,100% { opacity:0.1; transform:scale(1); }
-  50%     { opacity:0.2; transform:scale(1.1); }
+  0%,100% { opacity: 0.08; transform: scale(1); }
+  50%     { opacity: 0.18; transform: scale(1.12); }
 }
 .aura {
-  position:absolute; border-radius:50%; pointer-events:none;
+  position: absolute; border-radius: 50%; pointer-events: none;
   background: radial-gradient(circle, #1DB954 0%, transparent 70%);
   animation: aura-pulse 3s ease-in-out infinite;
 }
 
+/* ── Track row hover ───────────────────────────────────────────────────────── */
+.track-row {
+  display: flex; align-items: center; padding: 10px 12px;
+  border-radius: 8px; gap: 12px; cursor: pointer;
+  transition: background 0.15s ease;
+}
+.track-row:hover { background: rgba(255,255,255,0.06); }
+
+/* ── Tab buttons ───────────────────────────────────────────────────────────── */
+.tab-btn {
+  flex: 1; padding: 10px 4px; border: none;
+  background: transparent; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 11px; font-weight: 500;
+  transition: color 0.15s;
+}
