@@ -8,7 +8,7 @@ import { Play, Pause, SkipForward, Search, Users, Copy, CheckCircle2, Music, Lis
 const SOCKET_URL = import.meta.env.VITE_BACKEND_URL
   || (window.location.hostname === 'localhost' || window.location.hostname.startsWith('192.')
       ? `http://${window.location.hostname}:3001`
-      : 'https://yourjam-backend.onrender.com');  // ← replace with your actual Render URL if different
+      : 'https://yourjam.onrender.com');
 
 
 // Pre-computed stable EQ bar configs — defined outside component so Math.random never re-runs

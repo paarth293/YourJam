@@ -16,7 +16,12 @@ app.use(express.json());
 const server = http.createServer(app);
 const io = socketIo(server, {
   cors: {
-    origin: "*",
+    origin: [
+      "https://your-jam-chi.vercel.app",
+      /^http:\/\/192\.168\./,          // local WiFi testing
+      "http://localhost:5173",
+      "*"                               // safety fallback
+    ],
     methods: ["GET", "POST"]
   }
 });
