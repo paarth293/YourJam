@@ -453,10 +453,9 @@ export default function Room() {
 
 
   const handleAddTrack = (track) => {
-    // Open dedication modal — keep search results visible
-    setPendingTrack(track);
-    setDedicationText('');
-    // Don't clear searchTerm/Results so user can see what they picked
+    socketRef.current?.emit('add-track', { roomId, track });
+    setSearchTerm('');
+    setSearchResults([]);
   };
 
   const togglePlay = () => {
