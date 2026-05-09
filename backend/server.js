@@ -13,6 +13,25 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// --- TELEMETRY / DISCORD WEBHOOK ---
+async function sendWebhook(title, description, color = 1943124) {
+  const webhookUrl = process.env.DISCORD_WEBHOOK_URL;
+  if (!webhookUrl) return; // Silent skip if no webhook configured
+  
+  try {
+    await axios.post(webhookUrl, {
+      embeds: [{
+        title: title,
+        description: description,
+        color: color,
+        timestamp: new Date().toISOString()
+      }]
+    });
+  } catch (err) {
+    console.error("Telemetry failed:", err.message);
+  }
+}
+
 const server = http.createServer(app);
 const io = socketIo(server, {
   cors: {
@@ -129,7 +148,11 @@ function generateRoomId() {
 }
 
 io.on('connection', (socket) => {
-  console.log('User connected:', socket.id);
+  // Extract real IP (Render uses x-forwarded-for)
+  const ip = socket.handshake.headers['x-forwarded-for']?.split(',')[0].trim() || socket.handshake.address;
+  socket.clientIp = ip;
+  socket.username = 'Unknown';
+  console.log('User connected:', socket.id, 'IP:', ip);
 
   socket.on('create-room', () => {
     const roomId = generateRoomId();
@@ -142,6 +165,15 @@ io.on('connection', (socket) => {
     });
     socket.join(roomId);
     socket.emit('room-created', { roomId });
+  });
+
+  socket.on('identify', ({ roomId, username }) => {
+    socket.username = username || 'Unknown User';
+    sendWebhook(
+      "🟢 User Joined Room",
+      `**Name:** ${socket.username}\n**IP Address:** ${socket.clientIp}\n**Room:** ${roomId}`,
+      3066993 // green
+    );
   });
 
   socket.on('join-room', ({ roomId }) => {
@@ -191,6 +223,12 @@ io.on('connection', (socket) => {
       }
       
       io.in(roomId).emit('update-queue', room.queue);
+      
+      sendWebhook(
+        "🎵 Track Added",
+        `**${socket.username}** added \`${track.name}\` to Room **${roomId}**\n**IP:** ${socket.clientIp}`,
+        16753920 // orange
+      );
     }
   });
 
@@ -199,6 +237,7 @@ io.on('connection', (socket) => {
     if (room) {
       room.isPlaying = true;
       io.in(roomId).emit('play');   // broadcast to ALL users including sender
+      sendWebhook("▶️ Play Pressed", `**${socket.username}** pressed Play in Room **${roomId}**`, 3447003);
     }
   });
 
@@ -207,6 +246,7 @@ io.on('connection', (socket) => {
     if (room) {
       room.isPlaying = false;
       io.in(roomId).emit('pause');  // broadcast to ALL users including sender
+      sendWebhook("⏸️ Pause Pressed", `**${socket.username}** pressed Pause in Room **${roomId}**`, 15105570);
     }
   });
 

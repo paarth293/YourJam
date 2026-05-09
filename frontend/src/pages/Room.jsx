@@ -52,6 +52,7 @@ export default function Room() {
   // ── Chat state
   const [messages, setMessages] = useState([]);
   const [chatInput, setChatInput] = useState('');
+  const [userNameInput, setUserNameInput] = useState('');
   const [chatOpen, setChatOpen] = useState(false);
   const chatOpenRef = useRef(false);
   useEffect(() => { chatOpenRef.current = chatOpen; }, [chatOpen]);
@@ -60,7 +61,7 @@ export default function Room() {
   const [unread, setUnread] = useState(0);
   const chatEndRef = useRef(null);
   const notifTimer = useRef(null);
-  const myUsername = useRef('Jammer' + Math.floor(Math.random() * 9000 + 1000));
+  const myUsername = useRef(''); // will be set when they join
   const sentMsgIds = useRef(new Set()); // tracks optimistic messages to avoid duplicates
   const sentReactionIds = useRef(new Set()); // tracks local reactions to avoid double-fire
   // ── Reactions & fun state
@@ -571,8 +572,18 @@ export default function Room() {
 
   // ─── Handlers ─────────────────────────────────────────────────────────────
   const handleEnterRoom = () => {
+    const name = userNameInput.trim();
+    if (!name) {
+      alert("Please enter a name so your friends know it's you!");
+      return;
+    }
+    myUsername.current = name;
     setHasInteracted(true);
     hasInteractedRef.current = true;
+    
+    // Tell the backend our name for tracking/telemetry
+    socketRef.current?.emit('identify', { roomId, username: name });
+
     // Request authoritative sync — sync-state handler will load+seek to correct position
     // Small delay to ensure hasInteractedRef is true before sync-state fires
     setTimeout(() => {
@@ -1205,12 +1216,25 @@ export default function Room() {
               </div>
             </div>
             <h2 style={{ fontSize:'26px', fontWeight:'900', marginBottom:'10px', letterSpacing:'-0.5px' }}>Ready to Jam? 🎵</h2>
-            <p style={{ color:'rgba(255,255,255,0.5)', marginBottom:'28px', lineHeight:'1.7', fontSize:'14px' }}>
+            <p style={{ color:'rgba(255,255,255,0.5)', marginBottom:'20px', lineHeight:'1.7', fontSize:'14px' }}>
               Room <strong style={{ color:'#1DB954', fontFamily:'monospace', letterSpacing:'3px', fontSize:'16px' }}>{roomId}</strong><br />
-              Tap below to enable audio playback.
             </p>
-            <button onClick={handleEnterRoom} style={{ background:'#1DB954', color:'black', fontWeight:'800', padding:'15px 40px', borderRadius:'50px', border:'none', cursor:'pointer', fontSize:'16px', width:'100%', letterSpacing:'0.5px', transition:'transform 0.15s, box-shadow 0.15s', boxShadow:'0 0 24px rgba(29,185,84,0.4)' }}
-              onMouseEnter={e => { e.currentTarget.style.transform='scale(1.02)'; e.currentTarget.style.boxShadow='0 0 40px rgba(29,185,84,0.6)'; }}
+            
+            <input
+              type="text"
+              className="chat-input"
+              style={{ width:'100%', marginBottom:'24px', textAlign:'center', fontSize:'16px', padding:'14px', borderRadius:'12px', border:'1px solid rgba(255,255,255,0.2)' }}
+              placeholder="What's your name?"
+              value={userNameInput}
+              onChange={e => setUserNameInput(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleEnterRoom()}
+              maxLength={20}
+              autoFocus
+            />
+
+            <button onClick={handleEnterRoom} style={{ background:'#1DB954', color:'black', fontWeight:'800', padding:'15px 40px', borderRadius:'50px', border:'none', cursor:'pointer', fontSize:'16px', width:'100%', letterSpacing:'0.5px', transition:'transform 0.15s, box-shadow 0.15s', opacity: userNameInput.trim() ? 1 : 0.5, boxShadow: userNameInput.trim() ? '0 0 24px rgba(29,185,84,0.4)' : 'none' }}
+              disabled={!userNameInput.trim()}
+              onMouseEnter={e => { if(userNameInput.trim()){ e.currentTarget.style.transform='scale(1.02)'; e.currentTarget.style.boxShadow='0 0 40px rgba(29,185,84,0.6)'; } }}
               onMouseLeave={e => { e.currentTarget.style.transform='scale(1)'; e.currentTarget.style.boxShadow='0 0 24px rgba(29,185,84,0.4)'; }}
             >
               Enter the Jam ⚡
