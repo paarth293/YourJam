@@ -326,37 +326,75 @@ export default function Room() {
 
   const progressPct = duration > 0 ? (progress / duration) * 100 : 0;
 
-  // ─── Shared sub-components ────────────────────────────────────────────────
-  const TrackList = ({ tracks, isQueue }) => (
-    <>
-      {tracks.map((track, i) => (
-        <div
-          key={track.id + (isQueue ? 'q' : '')}
-          style={{ display:'flex', alignItems:'center', padding:'10px 8px', borderRadius:'6px', gap:'12px', background: hoveredTrack === track.id+(isQueue?'q':'') ? 'rgba(255,255,255,0.07)' : 'transparent', cursor:'pointer' }}
-          onMouseEnter={() => setHoveredTrack(track.id+(isQueue?'q':''))}
-          onMouseLeave={() => setHoveredTrack(null)}
-          onTouchStart={() => setHoveredTrack(track.id+(isQueue?'q':''))}
-        >
-          {isQueue && <span style={{ color:'#b3b3b3', width:'18px', fontSize:'13px', flexShrink:0 }}>{i+1}</span>}
-          <img src={isQueue ? track.albumArt : (track.album?.images?.[2]?.url||'')} style={{ width:'42px', height:'42px', borderRadius:'4px', objectFit:'cover', flexShrink:0, background:'#333' }} alt="" onError={e=>e.currentTarget.style.background='#333'} />
-          <div style={{ flex:1, minWidth:0 }}>
-            <div style={{ fontWeight:'500', fontSize:'14px', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{isQueue ? track.name : track.name}</div>
-            <div style={{ color:'#b3b3b3', fontSize:'12px', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{isQueue ? track.artist : track.artists?.[0]?.name}</div>
-          </div>
-          {!isQueue && (
-            <button
-              onClick={() => { handleAddTrack(track); if(isMobile) setActiveTab('queue'); }}
-              style={{ flexShrink:0, border:'1px solid #b3b3b3', background:'transparent', color:'white', borderRadius:'50px', padding:'5px 12px', fontSize:'11px', fontWeight:'700', cursor:'pointer', opacity: hoveredTrack===track.id ? 1 : isMobile ? 1 : 0, transition:'opacity 0.15s' }}
-            >ADD</button>
-          )}
+  // ─── Inline JSX helpers (NOT sub-components — avoids remount/focus loss) ──
+  const trackListJSX = (tracks, isQueue) => tracks.map((track, i) => (
+    <div
+      key={track.id + (isQueue ? 'q' : '')}
+      style={{ display:'flex', alignItems:'center', padding:'10px 8px', borderRadius:'6px', gap:'12px', background: hoveredTrack === track.id+(isQueue?'q':'') ? 'rgba(255,255,255,0.07)' : 'transparent' }}
+      onMouseEnter={() => setHoveredTrack(track.id+(isQueue?'q':''))}
+      onMouseLeave={() => setHoveredTrack(null)}
+    >
+      {isQueue && <span style={{ color:'#b3b3b3', width:'18px', fontSize:'13px', flexShrink:0 }}>{i+1}</span>}
+      <img src={isQueue ? track.albumArt : (track.album?.images?.[2]?.url||'')} style={{ width:'42px', height:'42px', borderRadius:'4px', objectFit:'cover', flexShrink:0, background:'#333' }} alt="" onError={e=>e.currentTarget.style.background='#333'} />
+      <div style={{ flex:1, minWidth:0 }}>
+        <div style={{ fontWeight:'500', fontSize:'14px', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{track.name}</div>
+        <div style={{ color:'#b3b3b3', fontSize:'12px', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{isQueue ? track.artist : track.artists?.[0]?.name}</div>
+      </div>
+      {!isQueue && (
+        <button
+          onClick={() => { handleAddTrack(track); if(isMobile) setActiveTab('queue'); }}
+          style={{ flexShrink:0, border:'1px solid #b3b3b3', background:'transparent', color:'white', borderRadius:'50px', padding:'5px 12px', fontSize:'11px', fontWeight:'700', cursor:'pointer', opacity: isMobile ? 1 : hoveredTrack===track.id ? 1 : 0, transition:'opacity 0.15s' }}
+        >ADD</button>
+      )}
+    </div>
+  ));
+
+  const searchPanelJSX = (
+    <div style={{ display:'flex', flexDirection:'column', flex:1, overflow:'hidden' }}>
+      <div style={{ padding: isMobile ? '12px 16px 8px' : '20px 24px 8px', flexShrink:0 }}>
+        <div style={{ position:'relative', maxWidth: isMobile ? '100%' : '480px' }}>
+          <span style={{ position:'absolute', left:'16px', top:'50%', transform:'translateY(-50%)', color:'#b3b3b3', pointerEvents:'none' }}><Search size={18} /></span>
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={e => setSearchTerm(e.target.value)}
+            placeholder="Search for songs or artists..."
+            style={{ width:'100%', background:'#242424', border:'none', borderRadius:'50px', color:'white', padding:'12px 20px 12px 48px', fontSize:'14px', outline:'none', boxSizing:'border-box' }}
+            onFocus={e => e.currentTarget.style.background='#333'}
+            onBlur={e => e.currentTarget.style.background='#242424'}
+          />
         </div>
-      ))}
-    </>
+      </div>
+      <div style={{ flex:1, overflowY:'auto', padding: isMobile ? '8px 16px 16px' : '8px 24px 24px' }}>
+        {isSearching && <p style={{ color:'#b3b3b3', padding:'16px 8px' }}>Searching Spotify...</p>}
+        {!isSearching && searchTerm && searchResults.length === 0 && <p style={{ color:'#b3b3b3', padding:'16px 8px' }}>No results found.</p>}
+        {searchResults.length > 0 && trackListJSX(searchResults, false)}
+        {!searchTerm && (
+          <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:'48px 24px', color:'#b3b3b3', gap:'12px' }}>
+            <Search size={48} style={{ opacity:0.2 }} />
+            <p style={{ fontWeight:'600' }}>Search for a song</p>
+            <p style={{ fontSize:'13px' }}>Results appear as you type</p>
+          </div>
+        )}
+      </div>
+    </div>
   );
 
-  const PlayerBar = () => (
+  const queuePanelJSX = (
+    <div style={{ flex:1, overflowY:'auto', padding: isMobile ? '16px' : '16px 24px 24px' }}>
+      <p style={{ fontSize: isMobile ? '18px' : '22px', fontWeight:'800', marginBottom:'16px' }}>Up Next</p>
+      {queue.length === 0 ? (
+        <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:'48px 24px', color:'#b3b3b3', border:'1px dashed rgba(255,255,255,0.1)', borderRadius:'12px', gap:'12px' }}>
+          <ListMusic size={48} style={{ opacity:0.3 }} />
+          <p style={{ fontWeight:'600' }}>Queue is empty</p>
+          <p style={{ fontSize:'13px' }}>Search for a song to start the jam!</p>
+        </div>
+      ) : trackListJSX(queue, true)}
+    </div>
+  );
+
+  const playerBarJSX = (
     <div style={{ background:'#181818', borderTop:'1px solid #282828', padding: isMobile ? '8px 12px' : '0 16px', height: isMobile ? 'auto' : '90px', display:'flex', flexDirection: isMobile ? 'column' : 'row', alignItems:'center', justifyContent:'space-between', gap: isMobile ? '8px' : 0, flexShrink:0 }}>
-      {/* Track info */}
       <div style={{ display:'flex', alignItems:'center', gap:'10px', width: isMobile ? '100%' : '30%', minWidth:0 }}>
         {currentTrack ? (
           <>
@@ -368,7 +406,6 @@ export default function Room() {
           </>
         ) : <div style={{ color:'#b3b3b3', fontSize:'13px' }}>Nothing playing yet</div>}
       </div>
-      {/* Controls */}
       <div style={{ display:'flex', flexDirection:'column', alignItems:'center', width: isMobile ? '100%' : '40%' }}>
         <div style={{ display:'flex', alignItems:'center', gap:'20px', marginBottom:'6px' }}>
           <button onClick={togglePlay} disabled={!currentTrack} style={{ width:'38px', height:'38px', borderRadius:'50%', background:'white', border:'none', cursor: currentTrack?'pointer':'not-allowed', display:'flex', alignItems:'center', justifyContent:'center', opacity: currentTrack?1:0.4 }}>
@@ -386,7 +423,6 @@ export default function Room() {
           <span style={{ minWidth:'32px' }}>{formatTime(duration)}</span>
         </div>
       </div>
-      {/* Right */}
       {!isMobile && (
         <div style={{ width:'30%', display:'flex', justifyContent:'flex-end', alignItems:'center', color:'#b3b3b3', fontSize:'13px', gap:'6px' }}>
           <Users size={16} /><span>{userCount}</span>
@@ -395,49 +431,6 @@ export default function Room() {
     </div>
   );
 
-  const SearchPanel = () => (
-    <div style={{ display:'flex', flexDirection:'column', flex:1, overflow:'hidden' }}>
-      <div style={{ padding: isMobile ? '12px 16px 8px' : '20px 24px 8px', flexShrink:0 }}>
-        <div style={{ position:'relative', maxWidth: isMobile ? '100%' : '480px' }}>
-          <span style={{ position:'absolute', left:'16px', top:'50%', transform:'translateY(-50%)', color:'#b3b3b3', pointerEvents:'none' }}><Search size={18} /></span>
-          <input
-            type="text" value={searchTerm}
-            onChange={e => setSearchTerm(e.target.value)}
-            placeholder="Search for songs or artists..."
-            autoFocus={isMobile}
-            style={{ width:'100%', background:'#242424', border:'none', borderRadius:'50px', color:'white', padding:'12px 20px 12px 48px', fontSize:'14px', outline:'none', boxSizing:'border-box' }}
-            onFocus={e => e.currentTarget.style.background='#333'}
-            onBlur={e => e.currentTarget.style.background='#242424'}
-          />
-        </div>
-      </div>
-      <div style={{ flex:1, overflowY:'auto', padding: isMobile ? '8px 16px 16px' : '8px 24px 24px' }}>
-        {isSearching && <p style={{ color:'#b3b3b3', padding:'16px 8px' }}>Searching Spotify...</p>}
-        {!isSearching && searchTerm && searchResults.length === 0 && <p style={{ color:'#b3b3b3', padding:'16px 8px' }}>No results found.</p>}
-        {searchResults.length > 0 && <TrackList tracks={searchResults} isQueue={false} />}
-        {!searchTerm && (
-          <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:'48px 24px', color:'#b3b3b3', gap:'12px' }}>
-            <Search size={48} style={{ opacity:0.2 }} />
-            <p style={{ fontWeight:'600' }}>Search for a song</p>
-            <p style={{ fontSize:'13px' }}>Results appear as you type</p>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-
-  const QueuePanel = () => (
-    <div style={{ flex:1, overflowY:'auto', padding: isMobile ? '16px' : '16px 24px 24px' }}>
-      <p style={{ fontSize: isMobile ? '18px' : '22px', fontWeight:'800', marginBottom:'16px' }}>Up Next</p>
-      {queue.length === 0 ? (
-        <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:'48px 24px', color:'#b3b3b3', border:'1px dashed rgba(255,255,255,0.1)', borderRadius:'12px', gap:'12px' }}>
-          <ListMusic size={48} style={{ opacity:0.3 }} />
-          <p style={{ fontWeight:'600' }}>Queue is empty</p>
-          <p style={{ fontSize:'13px' }}>Search for a song to start the jam!</p>
-        </div>
-      ) : <TrackList tracks={queue} isQueue={true} />}
-    </div>
-  );
 
   // ─── Main Room UI ─────────────────────────────────────────────────────────
   return (
@@ -498,11 +491,9 @@ export default function Room() {
 
           {/* Mobile Tab Content */}
           <div style={{ flex:1, overflow:'hidden', display:'flex', flexDirection:'column' }}>
-            {activeTab === 'search' ? <SearchPanel /> : <QueuePanel />}
+            {activeTab === 'search' ? searchPanelJSX : queuePanelJSX}
           </div>
-
-          {/* Mobile Player Bar */}
-          <PlayerBar />
+          {playerBarJSX}
         </>
       ) : (
         /* ── DESKTOP LAYOUT ── */
@@ -540,11 +531,11 @@ export default function Room() {
             </div>
             {/* Center Area */}
             <div style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden', background:'linear-gradient(180deg, #2a2a2a 0%, #121212 300px)' }}>
-              <SearchPanel />
-              {!searchTerm && <QueuePanel />}
+              {searchPanelJSX}
+              {!searchTerm && queuePanelJSX}
             </div>
           </div>
-          <PlayerBar />
+          {playerBarJSX}
         </>
       )}
     </div>
