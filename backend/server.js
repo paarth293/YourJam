@@ -239,6 +239,18 @@ io.on('connection', (socket) => {
     }
   });
 
+  socket.on('chat-message', ({ roomId, message, user }) => {
+    if (!rooms.has(roomId)) return;
+    if (!message?.trim()) return;
+    io.in(roomId).emit('chat-message', {
+      id: `${Date.now()}-${socket.id}`,
+      message: message.trim().slice(0, 300), // max 300 chars
+      user,
+      senderId: socket.id,
+      timestamp: Date.now(),
+    });
+  });
+
   socket.on('disconnect', () => {
     for (const [roomId, room] of rooms.entries()) {
       if (room.users.has(socket.id)) {

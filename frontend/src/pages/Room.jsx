@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import io from 'socket.io-client';
 import axios from 'axios';
-import { Play, Pause, SkipForward, Search, Users, Copy, CheckCircle2, Music, ListMusic } from 'lucide-react';
+import { Play, Pause, SkipForward, Search, Users, Copy, CheckCircle2, Music, ListMusic, MessageCircle, Send, X } from 'lucide-react';
 
 const SOCKET_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
 
@@ -40,8 +40,19 @@ export default function Room() {
   const [lyrics, setLyrics] = useState([]);
   const [activeLine, setActiveLine] = useState(0);
   const [lyricsLoading, setLyricsLoading] = useState(false);
-  const [dominantColor, setDominantColor] = useState('29,185,84'); // r,g,b
+  const [dominantColor, setDominantColor] = useState('29,185,84');
   const lyricsContainerRef = useRef(null);
+  // ── Chat state
+  const [messages, setMessages] = useState([]);
+  const [chatInput, setChatInput] = useState('');
+  const [chatOpen, setChatOpen] = useState(false);   // desktop chat panel
+  const [chatNotif, setChatNotif] = useState(null);  // popup message
+  const [notifLeaving, setNotifLeaving] = useState(false);
+  const [unread, setUnread] = useState(0);
+  const chatEndRef = useRef(null);
+  const notifTimer = useRef(null);
+  // Generate a stable random username per session
+  const myUsername = useRef('Jammer' + Math.floor(Math.random() * 9000 + 1000));
 
   const playerRef = useRef(null);
   const isPlayerReadyRef = useRef(false);   // true once onReady fires
@@ -283,13 +294,54 @@ export default function Room() {
       }
     });
 
+    socket.on('chat-message', (msg) => {
+      setMessages(prev => [...prev, msg]);
+      // Scroll chat to bottom
+      setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
+      // Show popup if chat panel not open / not on chat tab
+      const isChatVisible = chatOpen || activeTab === 'chat';
+      if (!isChatVisible) {
+        setUnread(n => n + 1);
+        // Clear old timer
+        clearTimeout(notifTimer.current);
+        setNotifLeaving(false);
+        setChatNotif(msg);
+        notifTimer.current = setTimeout(() => {
+          setNotifLeaving(true);
+          setTimeout(() => setChatNotif(null), 300);
+        }, 4000);
+      }
+    });
+
     return () => {
       socket.disconnect();
       clearInterval(progressIntervalRef.current);
+      clearTimeout(notifTimer.current);
     };
   }, [roomId, navigate, loadAndPlay]);
 
-  // ─── Progress Interval ─────────────────────────────────────────────────────
+  // Send a chat message
+  const sendMessage = () => {
+    const text = chatInput.trim();
+    if (!text || !socketRef.current) return;
+    socketRef.current.emit('chat-message', { roomId, message: text, user: myUsername.current });
+    setChatInput('');
+  };
+
+  const dismissNotif = () => {
+    clearTimeout(notifTimer.current);
+    setNotifLeaving(true);
+    setTimeout(() => setChatNotif(null), 300);
+  };
+
+  const openChat = () => {
+    setChatOpen(true);
+    setUnread(0);
+    setChatNotif(null);
+    setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'instant' }), 80);
+  };
+
+
   useEffect(() => {
     clearInterval(progressIntervalRef.current);
     if (isPlaying && hasInteracted) {
@@ -507,7 +559,90 @@ export default function Room() {
     </div>
   );
 
+  // ─── Chat Panel JSX ────────────────────────────────────────────────────────
+  const chatPanelJSX = (
+    <div style={{ display:'flex', flexDirection:'column', height:'100%', overflow:'hidden' }}>
+      {/* Chat Header */}
+      <div style={{ padding:'16px 20px 12px', borderBottom:'1px solid rgba(255,255,255,0.07)', display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:'10px' }}>
+          <div style={{ width:'32px', height:'32px', borderRadius:'50%', background:'rgba(29,185,84,0.15)', border:'1px solid rgba(29,185,84,0.3)', display:'flex', alignItems:'center', justifyContent:'center' }}>
+            <MessageCircle size={16} color="#1DB954" />
+          </div>
+          <div>
+            <p style={{ fontWeight:'700', fontSize:'15px' }}>Live Chat</p>
+            <p style={{ fontSize:'11px', color:'rgba(255,255,255,0.35)' }}>You are <span style={{ color:'#1DB954' }}>{myUsername.current}</span></p>
+          </div>
+        </div>
+        {!isMobile && (
+          <button onClick={() => setChatOpen(false)} style={{ background:'transparent', border:'none', cursor:'pointer', color:'rgba(255,255,255,0.4)', padding:'4px', borderRadius:'6px', display:'flex' }}>
+            <X size={18} />
+          </button>
+        )}
+      </div>
+
+      {/* Messages */}
+      <div style={{ flex:1, overflowY:'auto', padding:'16px', display:'flex', flexDirection:'column', gap:'10px' }}>
+        {messages.length === 0 ? (
+          <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'100%', gap:'12px', color:'rgba(255,255,255,0.3)' }}>
+            <MessageCircle size={40} style={{ opacity:0.3 }} />
+            <p style={{ fontWeight:'600', fontSize:'14px' }}>No messages yet</p>
+            <p style={{ fontSize:'12px' }}>Say something to the jam! 🎵</p>
+          </div>
+        ) : messages.map((msg) => {
+          const isMe = msg.user === myUsername.current;
+          return (
+            <div key={msg.id} style={{ display:'flex', flexDirection:'column', alignItems: isMe ? 'flex-end' : 'flex-start', gap:'3px' }}>
+              {!isMe && (
+                <span style={{ fontSize:'11px', color:'rgba(255,255,255,0.4)', paddingLeft:'4px', fontWeight:'600' }}>{msg.user}</span>
+              )}
+              <div className={isMe ? 'chat-bubble-mine' : 'chat-bubble-theirs'}>
+                <p style={{ fontSize:'14px', lineHeight:'1.4', color: isMe ? '#e8ffe8' : 'rgba(255,255,255,0.9)' }}>{msg.message}</p>
+              </div>
+              <span style={{ fontSize:'10px', color:'rgba(255,255,255,0.25)', paddingLeft:'4px', paddingRight:'4px' }}>
+                {new Date(msg.timestamp).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' })}
+              </span>
+            </div>
+          );
+        })}
+        <div ref={chatEndRef} />
+      </div>
+
+      {/* Input */}
+      <div style={{ padding:'12px 16px', borderTop:'1px solid rgba(255,255,255,0.07)', display:'flex', gap:'8px', alignItems:'center', flexShrink:0 }}>
+        <input
+          className="chat-input"
+          type="text"
+          value={chatInput}
+          onChange={e => setChatInput(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && sendMessage()}
+          placeholder="Say something... 🎶"
+          maxLength={300}
+        />
+        <button className="chat-send-btn" onClick={sendMessage}>
+          <Send size={16} color="black" />
+        </button>
+      </div>
+    </div>
+  );
+
+  // ─── Chat Notification Popup ───────────────────────────────────────────────
+  const notifJSX = chatNotif ? (
+    <div className={`chat-notif${notifLeaving ? ' leaving' : ''}`}>
+      <div style={{ width:'34px', height:'34px', borderRadius:'50%', background:'rgba(29,185,84,0.2)', border:'1px solid rgba(29,185,84,0.4)', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+        <span style={{ fontSize:'14px' }}>💬</span>
+      </div>
+      <div style={{ flex:1, minWidth:0 }}>
+        <p style={{ fontSize:'12px', fontWeight:'700', color:'#1DB954', marginBottom:'2px' }}>{chatNotif.user}</p>
+        <p style={{ fontSize:'13px', color:'rgba(255,255,255,0.85)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{chatNotif.message}</p>
+      </div>
+      <button onClick={dismissNotif} style={{ background:'transparent', border:'none', cursor:'pointer', color:'rgba(255,255,255,0.35)', padding:'2px', display:'flex', flexShrink:0, pointerEvents:'all' }}>
+        <X size={14} />
+      </button>
+    </div>
+  ) : null;
+
   const searchPanelJSX = (
+
     <div style={{ display:'flex', flexDirection:'column', flex:1, overflow:'hidden' }}>
       <div style={{ padding: isMobile ? '12px 16px 8px' : '20px 24px 8px', flexShrink:0 }}>
         <div style={{ position:'relative', maxWidth: isMobile ? '100%' : '480px' }}>
@@ -620,7 +755,7 @@ export default function Room() {
   // ─── Main Room UI ─────────────────────────────────────────────────────────
   return (
     <div style={{ display:'flex', flexDirection:'column', height:'100vh', width:'100vw', overflow:'hidden', backgroundColor:'#060612', color:'white' }}>
-
+      {notifJSX}
       {/* Hidden YouTube Player */}
       <div style={{ position:'absolute', left:'-9999px', top:'-9999px', width:'300px', height:'300px', pointerEvents:'none' }}>
         <div id="yt-player-container"></div>
@@ -673,18 +808,21 @@ export default function Room() {
           </div>
 
           {/* Mobile Tab Bar */}
-          <div style={{ display:'flex', background:'#181818', borderBottom:'1px solid #282828', flexShrink:0 }}>
-            {[['search','🔍'],['queue','📋'],['lyrics','🎤']].map(([tab, icon]) => (
-              <button key={tab} onClick={() => setActiveTab(tab)} style={{ flex:1, padding:'10px 4px', border:'none', background:'transparent', color: activeTab===tab ? '#1DB954' : '#b3b3b3', fontWeight: activeTab===tab ? '700' : '400', fontSize:'12px', cursor:'pointer', borderBottom: activeTab===tab ? '2px solid #1DB954' : '2px solid transparent', display:'flex', flexDirection:'column', alignItems:'center', gap:'2px' }}>
-                <span style={{ fontSize:'18px' }}>{icon}</span>
+          <div style={{ display:'flex', background:'rgba(0,0,0,0.8)', borderBottom:'1px solid rgba(255,255,255,0.07)', flexShrink:0 }}>
+            {[['search','🔍'],['queue','📋'],['lyrics','🎤'],['chat','💬']].map(([tab, icon]) => (
+              <button key={tab} onClick={() => { setActiveTab(tab); if(tab==='chat'){setUnread(0);setTimeout(()=>chatEndRef.current?.scrollIntoView({behavior:'instant'}),80);} }} style={{ flex:1, padding:'10px 4px', border:'none', background:'transparent', color: activeTab===tab ? '#1DB954' : 'rgba(255,255,255,0.4)', fontWeight: activeTab===tab ? '700' : '400', fontSize:'11px', cursor:'pointer', borderBottom: activeTab===tab ? '2px solid #1DB954' : '2px solid transparent', display:'flex', flexDirection:'column', alignItems:'center', gap:'2px', position:'relative' }}>
+                <span style={{ fontSize:'17px' }}>{icon}</span>
                 <span style={{ textTransform:'capitalize' }}>{tab}</span>
+                {tab==='chat' && unread > 0 && (
+                  <span style={{ position:'absolute', top:'6px', right:'calc(50% - 18px)', background:'#1DB954', color:'black', fontSize:'9px', fontWeight:'800', borderRadius:'50%', width:'16px', height:'16px', display:'flex', alignItems:'center', justifyContent:'center' }}>{unread > 9 ? '9+' : unread}</span>
+                )}
               </button>
             ))}
           </div>
 
           {/* Mobile Tab Content */}
           <div style={{ flex:1, overflow:'hidden', display:'flex', flexDirection:'column' }}>
-            {activeTab === 'search' ? searchPanelJSX : activeTab === 'lyrics' ? lyricsPanelJSX : queuePanelJSX}
+            {activeTab === 'search' ? searchPanelJSX : activeTab === 'lyrics' ? lyricsPanelJSX : activeTab === 'chat' ? chatPanelJSX : queuePanelJSX}
           </div>
           {playerBarJSX}
         </>
@@ -714,9 +852,18 @@ export default function Room() {
                 </div>
               </div>
 
-              {/* Listeners */}
-              <div style={{ display:'flex', alignItems:'center', gap:'8px', color:'rgba(255,255,255,0.4)', fontSize:'13px', marginBottom:'24px' }}>
-                <Users size={14} /><span>{userCount} listener{userCount!==1?'s':''}</span>
+              {/* Listeners + Chat toggle */}
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'24px' }}>
+                <div style={{ display:'flex', alignItems:'center', gap:'8px', color:'rgba(255,255,255,0.4)', fontSize:'13px' }}>
+                  <Users size={14} /><span>{userCount} listener{userCount!==1?'s':''}</span>
+                </div>
+                <button onClick={() => chatOpen ? setChatOpen(false) : openChat()} style={{ position:'relative', background: chatOpen ? 'rgba(29,185,84,0.15)' : 'rgba(255,255,255,0.06)', border:`1px solid ${chatOpen ? 'rgba(29,185,84,0.4)' : 'rgba(255,255,255,0.1)'}`, borderRadius:'8px', cursor:'pointer', color: chatOpen ? '#1DB954' : 'rgba(255,255,255,0.5)', padding:'6px 10px', display:'flex', alignItems:'center', gap:'5px', fontSize:'12px', fontWeight:'600', transition:'all 0.2s' }}>
+                  <MessageCircle size={14} />
+                  <span>Chat</span>
+                  {unread > 0 && !chatOpen && (
+                    <span style={{ background:'#1DB954', color:'black', fontSize:'9px', fontWeight:'800', borderRadius:'50%', width:'16px', height:'16px', display:'flex', alignItems:'center', justifyContent:'center' }}>{unread}</span>
+                  )}
+                </button>
               </div>
 
               {/* Mini now-playing in sidebar */}
@@ -743,8 +890,13 @@ export default function Room() {
             </div>
 
             {/* Lyrics Panel */}
-            <div className="glass-dark" style={{ width: lyrics.length || lyricsLoading ? '300px' : '0', flexShrink:0, overflow:'hidden', borderLeft:'1px solid rgba(255,255,255,0.06)', transition:'width 0.35s ease', display:'flex', flexDirection:'column' }}>
+            <div className="glass-dark" style={{ width: !chatOpen && (lyrics.length || lyricsLoading) ? '300px' : '0', flexShrink:0, overflow:'hidden', borderLeft:'1px solid rgba(255,255,255,0.06)', transition:'width 0.35s ease', display:'flex', flexDirection:'column' }}>
               {lyricsPanelJSX}
+            </div>
+
+            {/* Chat Panel — slides in from right when open */}
+            <div className="glass-dark" style={{ width: chatOpen ? '300px' : '0', flexShrink:0, overflow:'hidden', borderLeft:'1px solid rgba(255,255,255,0.06)', transition:'width 0.35s ease', display:'flex', flexDirection:'column' }}>
+              {chatPanelJSX}
             </div>
           </div>
           {playerBarJSX}
