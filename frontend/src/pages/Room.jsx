@@ -394,22 +394,45 @@ export default function Room() {
   );
 
   const playerBarJSX = (
-    <div style={{ background:'#181818', borderTop:'1px solid #282828', padding: isMobile ? '8px 12px' : '0 16px', height: isMobile ? 'auto' : '90px', display:'flex', flexDirection: isMobile ? 'column' : 'row', alignItems:'center', justifyContent:'space-between', gap: isMobile ? '8px' : 0, flexShrink:0 }}>
-      <div style={{ display:'flex', alignItems:'center', gap:'10px', width: isMobile ? '100%' : '30%', minWidth:0 }}>
+    <div style={{ background:'#181818', borderTop:'1px solid #282828', padding: isMobile ? '8px 12px' : '0 16px', height: isMobile ? 'auto' : '90px', display:'flex', flexDirection: isMobile ? 'column' : 'row', alignItems:'center', justifyContent:'space-between', gap: isMobile ? '8px' : 0, flexShrink:0, position:'relative', overflow:'hidden' }}>
+      {/* Background aura when playing */}
+      {isPlaying && currentTrack && (
+        <div className="aura" style={{ width:'300px', height:'300px', bottom:'-150px', left:'50%', transform:'translateX(-50%)' }} />
+      )}
+      <div style={{ display:'flex', alignItems:'center', gap:'10px', width: isMobile ? '100%' : '30%', minWidth:0, position:'relative', zIndex:1 }}>
         {currentTrack ? (
           <>
-            <img src={currentTrack.albumArt} style={{ width: isMobile ? '40px' : '56px', height: isMobile ? '40px' : '56px', borderRadius:'4px', objectFit:'cover', flexShrink:0 }} alt="" />
+            {/* Vinyl-spinning album art */}
+            <div className={isPlaying ? 'glow-playing' : ''} style={{ borderRadius:'50%', flexShrink:0, width: isMobile?'40px':'56px', height: isMobile?'40px':'56px' }}>
+              <img
+                src={currentTrack.albumArt}
+                className={isPlaying ? 'vinyl-spinning' : 'vinyl-paused'}
+                style={{ width:'100%', height:'100%', objectFit:'cover', display:'block' }}
+                alt=""
+              />
+            </div>
             <div style={{ minWidth:0, flex:1 }}>
-              <div style={{ fontWeight:'600', fontSize: isMobile ? '13px' : '14px', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{currentTrack.name}</div>
+              <div style={{ display:'flex', alignItems:'center', gap:'6px' }}>
+                <div style={{ fontWeight:'600', fontSize: isMobile ? '13px' : '14px', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', color: isPlaying ? '#1DB954' : 'white', transition:'color 0.3s' }}>{currentTrack.name}</div>
+                {/* Equalizer bars */}
+                <div style={{ display:'flex', alignItems:'flex-end', gap:'2px', height:'20px', flexShrink:0 }}>
+                  {[0,1,2,3].map(i => (
+                    <div key={i} className={`eq-bar${isPlaying ? '' : ' eq-bar-paused'}`} style={{ height: i%2===0 ? '12px' : '8px' }} />
+                  ))}
+                </div>
+              </div>
               <div style={{ color:'#b3b3b3', fontSize:'12px', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{currentTrack.artist}</div>
             </div>
           </>
         ) : <div style={{ color:'#b3b3b3', fontSize:'13px' }}>Nothing playing yet</div>}
       </div>
-      <div style={{ display:'flex', flexDirection:'column', alignItems:'center', width: isMobile ? '100%' : '40%' }}>
+      <div style={{ display:'flex', flexDirection:'column', alignItems:'center', width: isMobile ? '100%' : '40%', position:'relative', zIndex:1 }}>
         <div style={{ display:'flex', alignItems:'center', gap:'20px', marginBottom:'6px' }}>
-          <button onClick={togglePlay} disabled={!currentTrack} style={{ width:'38px', height:'38px', borderRadius:'50%', background:'white', border:'none', cursor: currentTrack?'pointer':'not-allowed', display:'flex', alignItems:'center', justifyContent:'center', opacity: currentTrack?1:0.4 }}>
-            {isPlaying ? <Pause size={18} fill="black" color="black" /> : <Play size={18} fill="black" color="black" style={{ marginLeft:'2px' }} />}
+          <button onClick={togglePlay} disabled={!currentTrack} style={{ width:'38px', height:'38px', borderRadius:'50%', background: isPlaying ? '#1DB954' : 'white', border:'none', cursor: currentTrack?'pointer':'not-allowed', display:'flex', alignItems:'center', justifyContent:'center', opacity: currentTrack?1:0.4, transition:'background 0.3s, transform 0.1s' }}
+            onMouseEnter={e => { if(currentTrack) e.currentTarget.style.transform='scale(1.08)'; }}
+            onMouseLeave={e => e.currentTarget.style.transform='scale(1)'}
+          >
+            {isPlaying ? <Pause size={18} fill={isPlaying?'black':'black'} color="black" /> : <Play size={18} fill="black" color="black" style={{ marginLeft:'2px' }} />}
           </button>
           <button onClick={handleSkip} disabled={!currentTrack} style={{ background:'transparent', border:'none', color:'#b3b3b3', cursor: currentTrack?'pointer':'not-allowed', display:'flex', alignItems:'center', opacity: currentTrack?1:0.4 }}>
             <SkipForward size={22} fill="currentColor" />
@@ -418,13 +441,13 @@ export default function Room() {
         <div style={{ display:'flex', alignItems:'center', gap:'8px', width:'100%', fontSize:'11px', color:'#b3b3b3' }}>
           <span style={{ minWidth:'32px', textAlign:'right' }}>{formatTime(progress)}</span>
           <div style={{ flex:1, height:'4px', background:'#4d4d4d', borderRadius:'4px', overflow:'hidden' }}>
-            <div style={{ height:'100%', width:`${progressPct}%`, background: isPlaying?'#1DB954':'white', borderRadius:'4px', transition:'width 0.5s linear' }} />
+            <div className={isPlaying ? 'progress-playing' : ''} style={{ height:'100%', width:`${progressPct}%`, background: isPlaying ? undefined : 'white', borderRadius:'4px', transition: isPlaying ? 'width 0.5s linear' : 'width 0.5s linear, background 0.3s' }} />
           </div>
           <span style={{ minWidth:'32px' }}>{formatTime(duration)}</span>
         </div>
       </div>
       {!isMobile && (
-        <div style={{ width:'30%', display:'flex', justifyContent:'flex-end', alignItems:'center', color:'#b3b3b3', fontSize:'13px', gap:'6px' }}>
+        <div style={{ width:'30%', display:'flex', justifyContent:'flex-end', alignItems:'center', color:'#b3b3b3', fontSize:'13px', gap:'6px', position:'relative', zIndex:1 }}>
           <Users size={16} /><span>{userCount}</span>
         </div>
       )}
