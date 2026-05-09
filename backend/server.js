@@ -193,7 +193,7 @@ io.on('connection', (socket) => {
     const room = rooms.get(roomId);
     if (room) {
       room.isPlaying = true;
-      socket.to(roomId).emit('play');
+      io.in(roomId).emit('play');   // broadcast to ALL users including sender
     }
   });
 
@@ -201,7 +201,7 @@ io.on('connection', (socket) => {
     const room = rooms.get(roomId);
     if (room) {
       room.isPlaying = false;
-      socket.to(roomId).emit('pause');
+      io.in(roomId).emit('pause');  // broadcast to ALL users including sender
     }
   });
 
@@ -209,7 +209,7 @@ io.on('connection', (socket) => {
     const room = rooms.get(roomId);
     if (room) {
       room.currentTime = time;
-      socket.to(roomId).emit('seek', time);
+      io.in(roomId).emit('seek', time);  // broadcast to ALL users including sender
     }
   });
   

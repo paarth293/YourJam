@@ -120,11 +120,9 @@ export default function Room() {
             socketRef.current?.emit('skip', roomId);
           }
           if (evt.data === window.YT.PlayerState.PLAYING) {
-            setIsPlaying(true);
+            // Only update duration, do NOT call setIsPlaying here.
+            // State is managed exclusively by socket events to avoid feedback loops.
             setDuration(playerRef.current.getDuration?.() || 0);
-          }
-          if (evt.data === window.YT.PlayerState.PAUSED) {
-            setIsPlaying(false);
           }
         }
       }
@@ -190,15 +188,23 @@ export default function Room() {
 
     socket.on('play', () => {
       setIsPlaying(true);
-      if (isPlayerReadyRef.current && playerRef.current?.playVideo && hasInteractedRef.current) {
-        playerRef.current.playVideo();
+      // Always try to play — the server is the source of truth
+      if (isPlayerReadyRef.current && playerRef.current) {
+        const state = playerRef.current.getPlayerState?.();
+        if (state === -1 && currentTrack?.youtubeId) {
+          // Player has no video loaded yet, load it
+          playerRef.current.loadVideoById(currentTrack.youtubeId);
+        } else {
+          playerRef.current.playVideo?.();
+        }
       }
     });
 
     socket.on('pause', () => {
       setIsPlaying(false);
-      if (isPlayerReadyRef.current && playerRef.current?.pauseVideo && hasInteractedRef.current) {
-        playerRef.current.pauseVideo();
+      // Always pause — no hasInteracted guard, server is source of truth
+      if (isPlayerReadyRef.current && playerRef.current) {
+        playerRef.current.pauseVideo?.();
       }
     });
 
@@ -269,22 +275,12 @@ export default function Room() {
 
   const togglePlay = () => {
     if (!currentTrack) return;
+    // Only emit to server — the server broadcasts back to ALL users (including us)
+    // The socket 'play'/'pause' handler then controls the actual player
     if (isPlaying) {
       socketRef.current?.emit('pause', roomId);
-      if (isPlayerReadyRef.current) playerRef.current?.pauseVideo();
-      setIsPlaying(false);
     } else {
       socketRef.current?.emit('play', roomId);
-      if (isPlayerReadyRef.current) {
-        // If player has no video loaded yet, load it now
-        const playerState = playerRef.current?.getPlayerState?.();
-        if (playerState === -1 && currentTrack?.youtubeId) {
-          playerRef.current.loadVideoById(currentTrack.youtubeId);
-        } else {
-          playerRef.current?.playVideo();
-        }
-      }
-      setIsPlaying(true);
     }
   };
 
