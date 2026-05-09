@@ -232,6 +232,25 @@ io.on('connection', (socket) => {
     }
   });
 
+  socket.on('remove-track', ({ roomId, trackId }) => {
+    roomId = roomId?.toUpperCase();
+    const room = rooms.get(roomId);
+    if (room) {
+      const trackIndex = room.queue.findIndex(t => t.id === trackId);
+      if (trackIndex !== -1) {
+        const removedTrack = room.queue[trackIndex];
+        room.queue.splice(trackIndex, 1);
+        io.in(roomId).emit('update-queue', room.queue);
+        
+        sendWebhook(
+          "🗑️ Track Removed",
+          `**${socket.username}** removed \`${removedTrack.name}\` from Room **${roomId}**`,
+          15158332 // red
+        );
+      }
+    }
+  });
+
   socket.on('play', (roomId) => {
     const room = rooms.get(roomId);
     if (room) {

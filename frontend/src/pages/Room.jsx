@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import io from 'socket.io-client';
 import axios from 'axios';
-import { Play, Pause, SkipForward, Search, Users, Copy, CheckCircle2, Music, ListMusic, MessageCircle, Send, X } from 'lucide-react';
+import { Play, Pause, SkipForward, Search, Users, Copy, CheckCircle2, Music, ListMusic, MessageCircle, Send, X, Trash2, LogOut } from 'lucide-react';
 
 // Production backend on Render; local dev uses the current hostname
 const SOCKET_URL = import.meta.env.VITE_BACKEND_URL
@@ -639,6 +639,22 @@ export default function Room() {
     socketRef.current?.emit('skip', roomId);
   };
 
+  const handleRemoveTrack = (trackId) => {
+    socketRef.current?.emit('remove-track', { roomId, trackId });
+  };
+
+  const handleLeaveRoom = () => {
+    if (!window.confirm("Are you sure you want to leave the jam?")) return;
+    
+    // Pause local playback
+    playerRef.current?.pauseVideo?.();
+    setIsPlaying(false);
+    
+    // Disconnect and go home
+    socketRef.current?.disconnect();
+    navigate('/');
+  };
+
   const copyRoomCode = () => {
     navigator.clipboard.writeText(roomId);
     setCopied(true);
@@ -854,25 +870,31 @@ export default function Room() {
         <div style={{ fontWeight:'500', fontSize:'14px', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{track.name}</div>
         <div style={{ color:'#b3b3b3', fontSize:'12px', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{isQueue ? track.artist : track.artists?.[0]?.name}</div>
       </div>
-      {!isQueue && (
+      {!isQueue ? (
         <button
           onClick={() => handleAddTrack(track)}
           style={{
-            flexShrink:0,
-            width:'30px', height:'30px',
-            borderRadius:'50%',
-            background:'rgba(29,185,84,0.15)',
-            border:'1px solid rgba(29,185,84,0.4)',
-            color:'#1DB954',
-            display:'flex', alignItems:'center', justifyContent:'center',
-            cursor:'pointer',
-            fontSize:'18px', fontWeight:'300', lineHeight:1,
-            transition:'background 0.15s, transform 0.15s',
+            flexShrink:0, width:'30px', height:'30px', borderRadius:'50%',
+            background:'rgba(29,185,84,0.15)', border:'1px solid rgba(29,185,84,0.4)', color:'#1DB954',
+            display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer',
+            fontSize:'18px', fontWeight:'300', lineHeight:1, transition:'background 0.15s, transform 0.15s',
           }}
           onMouseEnter={e => { e.currentTarget.style.background='rgba(29,185,84,0.35)'; e.currentTarget.style.transform='scale(1.12)'; }}
           onMouseLeave={e => { e.currentTarget.style.background='rgba(29,185,84,0.15)'; e.currentTarget.style.transform='scale(1)'; }}
           title="Add to queue"
         >+</button>
+      ) : (
+        <button
+          onClick={() => handleRemoveTrack(track.id)}
+          style={{
+            flexShrink:0, width:'30px', height:'30px', borderRadius:'8px',
+            background:'transparent', color:'rgba(255,255,255,0.3)', border:'none',
+            display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', transition:'all 0.15s',
+          }}
+          onMouseEnter={e => { e.currentTarget.style.color='#ff4444'; e.currentTarget.style.background='rgba(255,68,68,0.1)'; }}
+          onMouseLeave={e => { e.currentTarget.style.color='rgba(255,255,255,0.3)'; e.currentTarget.style.background='transparent'; }}
+          title="Remove from queue"
+        ><Trash2 size={16} /></button>
       )}
     </div>
   ));
@@ -1285,6 +1307,9 @@ export default function Room() {
                   {copied ? <CheckCircle2 size={14} color="#1DB954" /> : <Copy size={14} color="rgba(255,255,255,0.4)" />}
                 </button>
               </div>
+              <button onClick={handleLeaveRoom} style={{ background:'rgba(255,68,68,0.1)', border:'1px solid rgba(255,68,68,0.3)', borderRadius:'8px', width:'28px', height:'28px', display:'flex', alignItems:'center', justifyContent:'center', color:'#ff4444', cursor:'pointer' }}>
+                <LogOut size={14} />
+              </button>
             </div>
           </div>
 
@@ -1362,6 +1387,14 @@ export default function Room() {
                   <p style={{ color:'rgba(255,255,255,0.4)', fontSize:'12px', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{currentTrack.artist}</p>
                 </div>
               )}
+
+              {/* Leave Jam Button */}
+              <button onClick={handleLeaveRoom} style={{ marginTop: currentTrack ? '24px' : 'auto', background:'transparent', border:'1px solid rgba(255,68,68,0.3)', borderRadius:'12px', color:'#ff4444', padding:'12px', display:'flex', alignItems:'center', justifyContent:'center', gap:'8px', cursor:'pointer', fontSize:'13px', fontWeight:'600', transition:'all 0.2s' }}
+                onMouseEnter={e => { e.currentTarget.style.background='rgba(255,68,68,0.1)'; e.currentTarget.style.borderColor='rgba(255,68,68,0.5)'; }}
+                onMouseLeave={e => { e.currentTarget.style.background='transparent'; e.currentTarget.style.borderColor='rgba(255,68,68,0.3)'; }}
+              >
+                <LogOut size={16} /> Leave Jam
+              </button>
             </div>
 
             {/* Center Area — hero + search/queue */}
