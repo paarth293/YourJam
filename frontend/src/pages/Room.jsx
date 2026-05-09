@@ -4,7 +4,12 @@ import io from 'socket.io-client';
 import axios from 'axios';
 import { Play, Pause, SkipForward, Search, Users, Copy, CheckCircle2, Music, ListMusic, MessageCircle, Send, X } from 'lucide-react';
 
-const SOCKET_URL = import.meta.env.VITE_BACKEND_URL || `http://${window.location.hostname}:3001`;
+// Production backend on Render; local dev uses the current hostname
+const SOCKET_URL = import.meta.env.VITE_BACKEND_URL
+  || (window.location.hostname === 'localhost' || window.location.hostname.startsWith('192.')
+      ? `http://${window.location.hostname}:3001`
+      : 'https://yourjam-backend.onrender.com');  // ← replace with your actual Render URL if different
+
 
 // Pre-computed stable EQ bar configs — defined outside component so Math.random never re-runs
 const EQ_BARS = Array.from({ length: 32 }, (_, i) => ({
@@ -72,9 +77,44 @@ export default function Room() {
   const hasInteractedRef = useRef(false);
   const isPlayingRef = useRef(false);   // mirror of isPlaying for use in event listeners
 
-  // Keep refs in sync with state
+  // ── MediaSession API: register as a media player so browser won't suspend us in background
+  useEffect(() => {
+    if (!('mediaSession' in navigator)) return;
+    if (!currentTrack) return;
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: currentTrack.name || 'Unknown Track',
+      artist: currentTrack.artist || 'Unknown Artist',
+      album: 'YourJam',
+      artwork: currentTrack.albumArt
+        ? [{ src: currentTrack.albumArt, sizes: '512x512', type: 'image/jpeg' }]
+        : [],
+    });
+    navigator.mediaSession.setActionHandler('play', () => {
+      if (socketRef.current?.connected) socketRef.current.emit('play', roomId);
+      setIsPlaying(true);
+      isPlayingRef.current = true;
+      playerRef.current?.playVideo?.();
+    });
+    navigator.mediaSession.setActionHandler('pause', () => {
+      if (socketRef.current?.connected) socketRef.current.emit('pause', roomId);
+      setIsPlaying(false);
+      isPlayingRef.current = false;
+      playerRef.current?.pauseVideo?.();
+    });
+    navigator.mediaSession.setActionHandler('nexttrack', () => {
+      socketRef.current?.emit('skip', roomId);
+    });
+  }, [currentTrack, roomId]);
+
+  // Keep MediaSession playback state in sync + keep isPlayingRef current
+  useEffect(() => {
+    isPlayingRef.current = isPlaying;
+    if (!('mediaSession' in navigator)) return;
+    navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
+  }, [isPlaying]);
+
+  // Keep hasInteractedRef in sync
   useEffect(() => { hasInteractedRef.current = hasInteracted; }, [hasInteracted]);
-  useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
 
   // ── Resume playback when user switches back to this tab (mobile tab switching fix)
   useEffect(() => {
@@ -106,24 +146,24 @@ export default function Room() {
     return () => window.removeEventListener('resize', onResize);
   }, []);
 
-  // ── Mobile back-button intercept: push a history entry when entering the room,
-  // so pressing the hardware/browser back switches tabs instead of leaving the room
+  // ── Mobile back-button intercept
+  // IMPORTANT: no activeTab in deps — we use activeTabRef to avoid re-running on every tab change
+  // (re-running pushes duplicate history entries, breaking the history stack)
   useEffect(() => {
     if (!isMobile) return;
     window.history.pushState({ room: true }, '');
     const handlePop = () => {
-      // If on queue already, allow navigation; otherwise switch to queue
-      if (activeTab !== 'queue') {
+      if (activeTabRef.current !== 'queue') {
         setActiveTab('queue');
-        window.history.pushState({ room: true }, '');  // re-push so next back also intercepted
+        activeTabRef.current = 'queue';
+        window.history.pushState({ room: true }, '');
       } else {
-        // Already on queue — let them leave
         window.history.back();
       }
     };
     window.addEventListener('popstate', handlePop);
     return () => window.removeEventListener('popstate', handlePop);
-  }, [isMobile, activeTab]);
+  }, [isMobile]); // ← activeTab intentionally excluded — use ref instead
 
   // Debounced dynamic search — fires 500ms after user stops typing
   useEffect(() => {
@@ -191,7 +231,8 @@ export default function Room() {
       else break;
     }
     setActiveLine(idx);
-    // Auto-scroll the active line into view
+    // Auto-scroll ONLY when user is actually on the lyrics tab
+    if (activeTabRef.current !== 'lyrics') return;
     const container = lyricsContainerRef.current;
     if (container) {
       const activeEl = container.querySelector('.lyric-active');
@@ -1142,8 +1183,8 @@ export default function Room() {
       {reactionParticlesJSX}
       {reactionBarJSX}
       {dedicationModalJSX}
-      {/* Hidden YouTube Player */}
-      <div style={{ position:'absolute', left:'-9999px', top:'-9999px', width:'300px', height:'300px', pointerEvents:'none' }}>
+      {/* YouTube Player — kept on-screen (1x1 invisible) so mobile browsers don't suspend it */}
+      <div style={{ position:'fixed', bottom:0, right:0, width:'1px', height:'1px', opacity:0, pointerEvents:'none', zIndex:-1 }}>
         <div id="yt-player-container"></div>
       </div>
 
