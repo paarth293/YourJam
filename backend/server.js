@@ -221,6 +221,18 @@ io.on('connection', (socket) => {
     }
   });
 
+  // Client requests current room state (used after tab-switch to resync)
+  socket.on('request-sync', (roomId) => {
+    const room = rooms.get(roomId);
+    if (room) {
+      socket.emit('sync-state', {
+        currentTrack: room.currentTrack,
+        currentTime:  room.currentTime,
+        isPlaying:    room.isPlaying,
+      });
+    }
+  });
+
   socket.on('skip', (roomId) => {
     const room = rooms.get(roomId);
     if (room) {

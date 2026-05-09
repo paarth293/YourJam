@@ -84,12 +84,14 @@ export default function Room() {
               playerRef.current.playVideo?.();
             }
           } catch (_) {}
-        }, 400);  // small delay so browser has finished switching
+        }, 400);
       }
+      // Also ask server for the authoritative position so we can seek to correct time
+      socketRef.current?.emit('request-sync', roomId);
     };
     document.addEventListener('visibilitychange', handleVisibility);
     return () => document.removeEventListener('visibilitychange', handleVisibility);
-  }, []);  // runs once, uses refs so no stale closure
+  }, [roomId]);  // roomId is stable, refs handle the rest
 
   // Responsive: track window width
   useEffect(() => {
@@ -332,9 +334,24 @@ export default function Room() {
     });
 
     socket.on('reaction', ({ emoji, id }) => {
-      const x = 8 + Math.random() * 84;   // random horizontal position
+      const x = 8 + Math.random() * 84;
       setReactions(prev => [...prev, { emoji, id, x }]);
       setTimeout(() => setReactions(prev => prev.filter(r => r.id !== id)), 3000);
+    });
+
+    // Authoritative state resync — triggered by request-sync (tab switch recovery)
+    socket.on('sync-state', ({ currentTrack: sTrack, currentTime: sTime, isPlaying: sPlaying }) => {
+      if (!sTrack) return;
+      setCurrentTrack(sTrack);
+      setIsPlaying(sPlaying);
+      if (isPlayerReadyRef.current && playerRef.current && hasInteractedRef.current) {
+        // Seek to correct position (add ~0.5s to compensate for network roundtrip)
+        const correctedTime = sTime + 0.5;
+        playerRef.current.seekTo?.(correctedTime, true);
+        if (sPlaying) {
+          setTimeout(() => playerRef.current?.playVideo?.(), 300);
+        }
+      }
     });
 
     socket.on('chat-message', (msg) => {
