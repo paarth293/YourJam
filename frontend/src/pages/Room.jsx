@@ -53,10 +53,11 @@ export default function Room() {
   const notifTimer = useRef(null);
   const myUsername = useRef('Jammer' + Math.floor(Math.random() * 9000 + 1000));
   // ── Reactions & fun state
-  const [reactions, setReactions] = useState([]);      // floating emoji particles
+  const [reactions, setReactions] = useState([]);
   const [showConfetti, setShowConfetti] = useState(false);
-  const [pendingTrack, setPendingTrack] = useState(null);  // track waiting for dedication
+  const [pendingTrack, setPendingTrack] = useState(null);
   const [dedicationText, setDedicationText] = useState('');
+  const [reactionBarOpen, setReactionBarOpen] = useState(false); // collapsible
 
   const playerRef = useRef(null);
   const isPlayerReadyRef = useRef(false);   // true once onReady fires
@@ -74,17 +75,21 @@ export default function Room() {
     return () => window.removeEventListener('resize', onResize);
   }, []);
 
-  // Debounced dynamic search — fires 400ms after user stops typing
+  // Debounced dynamic search — fires 500ms after user stops typing
   useEffect(() => {
-    if (!searchTerm.trim()) return; // don't wipe existing results when modal opens
+    if (!searchTerm.trim()) return; // don't wipe results when modal opens
+    setIsSearching(true);            // show spinner immediately
     const timer = setTimeout(async () => {
-      setIsSearching(true);
       try {
-        const res = await axios.get(`${SOCKET_URL}/api/search?q=${encodeURIComponent(searchTerm)}`);
-        setSearchResults(res.data);
-      } catch { setSearchResults([]); }
-      setIsSearching(false);
-    }, 400);
+        const res = await axios.get(`${SOCKET_URL}/api/search?q=${encodeURIComponent(searchTerm.trim())}`);
+        if (Array.isArray(res.data)) setSearchResults(res.data);
+      } catch (err) {
+        console.error('Search failed:', err.message);
+        // Keep old results visible on error
+      } finally {
+        setIsSearching(false);
+      }
+    }, 500);
     return () => clearTimeout(timer);
   }, [searchTerm]);
 
@@ -575,27 +580,45 @@ export default function Room() {
     <div key={r.id} className="reaction-particle" style={{ left:`${r.x}%` }}>{r.emoji}</div>
   ));
 
-  // ── 🎭 Reaction bar — horizontal on mobile, vertical pill on desktop
+  // ── 🎭 Reaction bar — collapsible pill (toggle button + emoji grid)
   const EMOJIS = ['❤️','🔥','😍','🎵','✨','💫','😂','🎉','👏','💕'];
   const reactionBarJSX = hasInteracted ? (
-    isMobile ? (
-      <div style={{ position:'fixed', left:'8px', bottom:'132px', zIndex:200, display:'flex', gap:'4px', flexWrap:'wrap', maxWidth:'190px' }}>
-        {EMOJIS.slice(0,8).map(e => (
-          <button key={e} className="react-btn" onClick={() => sendReaction(e)} style={{ width:'36px', height:'36px', fontSize:'18px' }}>{e}</button>
-        ))}
-      </div>
-    ) : (
-      <div style={{ position:'fixed', right:'16px', bottom:'110px', zIndex:200, display:'flex', flexDirection:'column', gap:'4px', alignItems:'center' }}>
-        <div style={{ background:'rgba(10,10,25,0.85)', backdropFilter:'blur(16px)', border:'1px solid rgba(255,255,255,0.1)', borderRadius:'28px', padding:'8px 6px', display:'flex', flexDirection:'column', gap:'3px', boxShadow:'0 8px 32px rgba(0,0,0,0.5)' }}>
-          <div style={{ display:'flex', justifyContent:'center', paddingBottom:'4px', borderBottom:'1px solid rgba(255,255,255,0.07)', marginBottom:'2px' }}>
-            <div style={{ width:'6px', height:'6px', borderRadius:'50%', background:'#1DB954' }} title="Connected" />
-          </div>
+    <div style={{ position:'fixed', right:'12px', bottom:'112px', zIndex:200, display:'flex', flexDirection:'column', alignItems:'flex-end', gap:'6px' }}>
+      {/* Expanded emoji grid */}
+      {reactionBarOpen && (
+        <div style={{
+          background:'rgba(10,10,28,0.92)', backdropFilter:'blur(20px)',
+          border:'1px solid rgba(255,255,255,0.1)', borderRadius:'20px',
+          padding:'10px 7px', display:'grid', gridTemplateColumns:'1fr 1fr',
+          gap:'4px', boxShadow:'0 12px 40px rgba(0,0,0,0.6)',
+        }}>
           {EMOJIS.map(e => (
-            <button key={e} className="react-btn" onClick={() => sendReaction(e)} title={`React with ${e}`}>{e}</button>
+            <button key={e} className="react-btn"
+              style={{ width:'40px', height:'40px', fontSize:'20px' }}
+              onClick={() => { sendReaction(e); }}
+              title={`React ${e}`}
+            >{e}</button>
           ))}
         </div>
-      </div>
-    )
+      )}
+      {/* Toggle button */}
+      <button
+        onClick={() => setReactionBarOpen(o => !o)}
+        style={{
+          width:'44px', height:'44px', borderRadius:'50%',
+          background: reactionBarOpen ? 'rgba(29,185,84,0.25)' : 'rgba(10,10,28,0.85)',
+          border:`1px solid ${reactionBarOpen ? 'rgba(29,185,84,0.5)' : 'rgba(255,255,255,0.12)'}`,
+          backdropFilter:'blur(16px)',
+          cursor:'pointer', fontSize:'22px',
+          display:'flex', alignItems:'center', justifyContent:'center',
+          boxShadow:'0 4px 20px rgba(0,0,0,0.4)',
+          transition:'all 0.2s',
+        }}
+        title={reactionBarOpen ? 'Close reactions' : 'Open reactions'}
+      >
+        {reactionBarOpen ? '✕' : '💕'}
+      </button>
+    </div>
   ) : null;
 
 
@@ -666,9 +689,23 @@ export default function Room() {
       </div>
       {!isQueue && (
         <button
-          onClick={() => { handleAddTrack(track); if(isMobile) setActiveTab('queue'); }}
-          style={{ flexShrink:0, border:'1px solid #b3b3b3', background:'transparent', color:'white', borderRadius:'50px', padding:'5px 12px', fontSize:'11px', fontWeight:'700', cursor:'pointer', opacity: isMobile ? 1 : hoveredTrack===track.id ? 1 : 0, transition:'opacity 0.15s' }}
-        >ADD</button>
+          onClick={() => handleAddTrack(track)}
+          style={{
+            flexShrink:0,
+            width:'30px', height:'30px',
+            borderRadius:'50%',
+            background:'rgba(29,185,84,0.15)',
+            border:'1px solid rgba(29,185,84,0.4)',
+            color:'#1DB954',
+            display:'flex', alignItems:'center', justifyContent:'center',
+            cursor:'pointer',
+            fontSize:'18px', fontWeight:'300', lineHeight:1,
+            transition:'background 0.15s, transform 0.15s',
+          }}
+          onMouseEnter={e => { e.currentTarget.style.background='rgba(29,185,84,0.35)'; e.currentTarget.style.transform='scale(1.12)'; }}
+          onMouseLeave={e => { e.currentTarget.style.background='rgba(29,185,84,0.15)'; e.currentTarget.style.transform='scale(1)'; }}
+          title="Add to queue"
+        >+</button>
       )}
     </div>
   ));
@@ -801,36 +838,74 @@ export default function Room() {
   ) : null;
 
   const searchPanelJSX = (
-
     <div style={{ display:'flex', flexDirection:'column', flex:1, overflow:'hidden' }}>
+      {/* Search input */}
       <div style={{ padding: isMobile ? '12px 16px 8px' : '20px 24px 8px', flexShrink:0 }}>
-        <div style={{ position:'relative', maxWidth: isMobile ? '100%' : '480px' }}>
-          <span style={{ position:'absolute', left:'16px', top:'50%', transform:'translateY(-50%)', color:'#b3b3b3', pointerEvents:'none' }}><Search size={18} /></span>
+        <div style={{ position:'relative', maxWidth: isMobile ? '100%' : '520px' }}>
+          <span style={{ position:'absolute', left:'16px', top:'50%', transform:'translateY(-50%)', color:'rgba(255,255,255,0.35)', pointerEvents:'none' }}>
+            <Search size={17} />
+          </span>
           <input
             type="text"
             value={searchTerm}
             onChange={e => setSearchTerm(e.target.value)}
-            placeholder="Search for songs or artists..."
-            style={{ width:'100%', background:'#242424', border:'none', borderRadius:'50px', color:'white', padding:'12px 20px 12px 48px', fontSize:'14px', outline:'none', boxSizing:'border-box' }}
-            onFocus={e => e.currentTarget.style.background='#333'}
-            onBlur={e => e.currentTarget.style.background='#242424'}
+            placeholder="Search songs, artists..."
+            style={{
+              width:'100%', boxSizing:'border-box',
+              background:'rgba(255,255,255,0.07)',
+              border:'1px solid rgba(255,255,255,0.1)',
+              borderRadius:'50px', color:'white',
+              padding:'11px 20px 11px 46px',
+              fontSize:'14px', outline:'none',
+              fontFamily:'inherit',
+              transition:'border-color 0.2s, background 0.2s',
+            }}
+            onFocus={e => { e.currentTarget.style.background='rgba(255,255,255,0.11)'; e.currentTarget.style.borderColor='rgba(29,185,84,0.5)'; }}
+            onBlur={e =>  { e.currentTarget.style.background='rgba(255,255,255,0.07)'; e.currentTarget.style.borderColor='rgba(255,255,255,0.1)'; }}
           />
+          {isSearching && (
+            <span style={{ position:'absolute', right:'16px', top:'50%', transform:'translateY(-50%)' }}>
+              <div style={{ width:'16px', height:'16px', border:'2px solid rgba(255,255,255,0.2)', borderTop:'2px solid #1DB954', borderRadius:'50%', animation:'vinyl-spin 0.7s linear infinite' }} />
+            </span>
+          )}
+          {searchTerm && !isSearching && (
+            <button onClick={() => { setSearchTerm(''); setSearchResults([]); }}
+              style={{ position:'absolute', right:'14px', top:'50%', transform:'translateY(-50%)', background:'rgba(255,255,255,0.1)', border:'none', borderRadius:'50%', width:'20px', height:'20px', cursor:'pointer', color:'rgba(255,255,255,0.5)', display:'flex', alignItems:'center', justifyContent:'center', padding:0 }}>
+              <X size={12} />
+            </button>
+          )}
         </div>
       </div>
-      <div style={{ flex:1, overflowY:'auto', padding: isMobile ? '8px 16px 16px' : '8px 24px 24px' }}>
-        {isSearching && <p style={{ color:'#b3b3b3', padding:'16px 8px' }}>Searching Spotify...</p>}
-        {!isSearching && searchTerm && searchResults.length === 0 && <p style={{ color:'#b3b3b3', padding:'16px 8px' }}>No results found.</p>}
-        {searchResults.length > 0 && trackListJSX(searchResults, false)}
-        {!searchTerm && (
-          <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:'48px 24px', color:'#b3b3b3', gap:'12px' }}>
-            <Search size={48} style={{ opacity:0.2 }} />
-            <p style={{ fontWeight:'600' }}>Search for a song</p>
-            <p style={{ fontSize:'13px' }}>Results appear as you type</p>
+
+      {/* Results */}
+      <div style={{ flex:1, overflowY:'auto', padding: isMobile ? '4px 8px 16px' : '4px 16px 24px' }}>
+        {/* Empty/placeholder state */}
+        {!searchTerm && searchResults.length === 0 && (
+          <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:'48px 24px', color:'rgba(255,255,255,0.25)', gap:'12px' }}>
+            <Search size={44} style={{ opacity:0.3 }} />
+            <p style={{ fontWeight:'700', fontSize:'16px' }}>Search for a song</p>
+            <p style={{ fontSize:'13px' }}>Results appear as you type ✨</p>
           </div>
+        )}
+        {/* No results */}
+        {!isSearching && searchTerm && searchResults.length === 0 && (
+          <div style={{ display:'flex', flexDirection:'column', alignItems:'center', padding:'40px 24px', color:'rgba(255,255,255,0.3)', gap:'10px' }}>
+            <span style={{ fontSize:'36px' }}>🤔</span>
+            <p style={{ fontWeight:'600' }}>No results for "<span style={{ color:'white' }}>{searchTerm}</span>"</p>
+            <p style={{ fontSize:'12px' }}>Try a different song or artist name</p>
+          </div>
+        )}
+        {/* Results list */}
+        {searchResults.length > 0 && (
+          <>
+            <p style={{ fontSize:'11px', color:'rgba(255,255,255,0.3)', padding:'4px 8px 8px', letterSpacing:'1px' }}>RESULTS — {searchResults.length} songs</p>
+            {trackListJSX(searchResults, false)}
+          </>
         )}
       </div>
     </div>
   );
+
 
   const queuePanelJSX = (
     <div style={{ flex:1, overflowY:'auto' }}>
