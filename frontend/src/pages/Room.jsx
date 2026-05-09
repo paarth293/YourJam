@@ -1187,8 +1187,10 @@ export default function Room() {
       {reactionParticlesJSX}
       {reactionBarJSX}
       {dedicationModalJSX}
-      {/* YouTube Player — kept on-screen (1x1 invisible) so mobile browsers don't suspend it */}
-      <div style={{ position:'fixed', bottom:0, right:0, width:'1px', height:'1px', opacity:0, pointerEvents:'none', zIndex:-1 }}>
+      {/* YouTube Player: position:fixed top-left, opacity nearly 0 but NOT 0.
+          opacity:0 or zIndex:-1 can cause browsers to kill the iframe audio pipeline.
+          4x4 ensures the browser treats it as a real visible element and keeps audio alive. */}
+      <div style={{ position:'fixed', top:0, left:0, width:'4px', height:'4px', opacity:0.01, pointerEvents:'none', zIndex:0, overflow:'hidden' }}>
         <div id="yt-player-container"></div>
       </div>
 
