@@ -60,13 +60,36 @@ export default function Room() {
   const [reactionBarOpen, setReactionBarOpen] = useState(false); // collapsible
 
   const playerRef = useRef(null);
-  const isPlayerReadyRef = useRef(false);   // true once onReady fires
-  const pendingVideoRef = useRef(null);     // stores videoId to play if player not ready yet
+  const isPlayerReadyRef = useRef(false);
+  const pendingVideoRef = useRef(null);
   const progressIntervalRef = useRef(null);
   const hasInteractedRef = useRef(false);
+  const isPlayingRef = useRef(false);   // mirror of isPlaying for use in event listeners
 
-  // Keep ref in sync with state for use inside closures
+  // Keep refs in sync with state
   useEffect(() => { hasInteractedRef.current = hasInteracted; }, [hasInteracted]);
+  useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
+
+  // ── Resume playback when user switches back to this tab (mobile tab switching fix)
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.hidden) return;  // tab went away — do nothing
+      // Tab is visible again — if we should be playing, kick the player
+      if (isPlayingRef.current && isPlayerReadyRef.current && playerRef.current) {
+        setTimeout(() => {
+          try {
+            const state = playerRef.current?.getPlayerState?.();
+            // 2 = paused, -1 = unstarted/ended — resume in either case
+            if (state === 2 || state === -1 || state === 0) {
+              playerRef.current.playVideo?.();
+            }
+          } catch (_) {}
+        }, 400);  // small delay so browser has finished switching
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, []);  // runs once, uses refs so no stale closure
 
   // Responsive: track window width
   useEffect(() => {
