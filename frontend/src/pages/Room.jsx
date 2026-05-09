@@ -459,12 +459,16 @@ export default function Room() {
   };
 
   const togglePlay = () => {
-    if (!currentTrack) return;
-    // Only emit to server — the server broadcasts back to ALL users (including us)
-    // The socket 'play'/'pause' handler then controls the actual player
+    if (!currentTrack || !isPlayerReadyRef.current) return;
     if (isPlaying) {
+      // Pause immediately locally, then broadcast
+      playerRef.current?.pauseVideo?.();
+      setIsPlaying(false);
       socketRef.current?.emit('pause', roomId);
     } else {
+      // Play immediately locally, then broadcast
+      playerRef.current?.playVideo?.();
+      setIsPlaying(true);
       socketRef.current?.emit('play', roomId);
     }
   };
@@ -926,10 +930,10 @@ export default function Room() {
 
 
   const playerBarJSX = (
-    <div style={{ background:'rgba(6,6,18,0.97)', borderTop:'1px solid rgba(255,255,255,0.07)', padding: isMobile ? '8px 12px' : '0 24px', height: isMobile ? 'auto' : '88px', display:'flex', flexDirection: isMobile ? 'column' : 'row', alignItems:'center', justifyContent:'space-between', gap: isMobile ? '8px' : 0, flexShrink:0, position:'relative', overflow:'hidden', backdropFilter:'blur(20px)' }}>
-      {/* Background aura when playing */}
+    <div style={{ background:'rgba(6,6,18,0.97)', borderTop:'1px solid rgba(255,255,255,0.07)', padding: isMobile ? '10px 16px' : '0 24px', height: isMobile ? 'auto' : '88px', minHeight: isMobile ? '96px' : 'unset', display:'flex', flexDirection: isMobile ? 'column' : 'row', alignItems:'center', justifyContent:'space-between', gap: isMobile ? '10px' : 0, flexShrink:0, position:'relative', backdropFilter:'blur(20px)' }}>
+      {/* Background aura when playing — pointer-events:none so it never blocks buttons */}
       {isPlaying && currentTrack && (
-        <div className="aura" style={{ width:'300px', height:'300px', bottom:'-150px', left:'50%', transform:'translateX(-50%)' }} />
+        <div className="aura" style={{ width:'300px', height:'300px', bottom:'-150px', left:'50%', transform:'translateX(-50%)', pointerEvents:'none', zIndex:0 }} />
       )}
       <div style={{ display:'flex', alignItems:'center', gap:'10px', width: isMobile ? '100%' : '30%', minWidth:0, position:'relative', zIndex:1 }}>
         {currentTrack ? (
@@ -958,18 +962,38 @@ export default function Room() {
           </>
         ) : <div style={{ color:'#b3b3b3', fontSize:'13px' }}>Nothing playing yet</div>}
       </div>
-      <div style={{ display:'flex', flexDirection:'column', alignItems:'center', width: isMobile ? '100%' : '40%', position:'relative', zIndex:1 }}>
-        <div style={{ display:'flex', alignItems:'center', gap:'20px', marginBottom:'6px' }}>
-          <button onClick={togglePlay} disabled={!currentTrack} style={{ width:'38px', height:'38px', borderRadius:'50%', background: isPlaying ? '#1DB954' : 'white', border:'none', cursor: currentTrack?'pointer':'not-allowed', display:'flex', alignItems:'center', justifyContent:'center', opacity: currentTrack?1:0.4, transition:'background 0.3s, transform 0.1s' }}
-            onMouseEnter={e => { if(currentTrack) e.currentTarget.style.transform='scale(1.08)'; }}
+      <div style={{ display:'flex', flexDirection: isMobile ? 'row' : 'column', alignItems:'center', width: isMobile ? '100%' : '40%', position:'relative', zIndex:1, gap: isMobile ? '12px' : 0, justifyContent: isMobile ? 'center' : 'center' }}>
+        <div style={{ display:'flex', alignItems:'center', gap: isMobile ? '16px' : '20px', marginBottom: isMobile ? 0 : '6px' }}>
+          <button onClick={togglePlay} disabled={!currentTrack}
+            style={{
+              width: isMobile ? '44px' : '38px',
+              height: isMobile ? '44px' : '38px',
+              borderRadius:'50%',
+              background: isPlaying ? '#1DB954' : 'white',
+              border:'none',
+              cursor: currentTrack ? 'pointer' : 'not-allowed',
+              display:'flex', alignItems:'center', justifyContent:'center',
+              opacity: currentTrack ? 1 : 0.4,
+              transition:'background 0.2s, transform 0.1s, box-shadow 0.2s',
+              boxShadow: isPlaying ? '0 0 20px rgba(29,185,84,0.6)' : 'none',
+              flexShrink: 0,
+            }}
+            onMouseEnter={e => { if(currentTrack) e.currentTarget.style.transform='scale(1.1)'; }}
             onMouseLeave={e => e.currentTarget.style.transform='scale(1)'}
           >
-            {isPlaying ? <Pause size={18} fill={isPlaying?'black':'black'} color="black" /> : <Play size={18} fill="black" color="black" style={{ marginLeft:'2px' }} />}
+            {isPlaying
+              ? <Pause size={isMobile ? 20 : 18} fill="black" color="black" />
+              : <Play  size={isMobile ? 20 : 18} fill="black" color="black" style={{ marginLeft:'2px' }} />
+            }
           </button>
-          <button onClick={handleSkip} disabled={!currentTrack} style={{ background:'transparent', border:'none', color:'#b3b3b3', cursor: currentTrack?'pointer':'not-allowed', display:'flex', alignItems:'center', opacity: currentTrack?1:0.4 }}>
-            <SkipForward size={22} fill="currentColor" />
+          <button onClick={handleSkip} disabled={!currentTrack}
+            style={{ background:'transparent', border:'none', color:'rgba(255,255,255,0.6)', cursor: currentTrack?'pointer':'not-allowed', display:'flex', alignItems:'center', opacity: currentTrack?1:0.4, padding:'4px' }}
+          >
+            <SkipForward size={isMobile ? 24 : 22} fill="currentColor" />
           </button>
         </div>
+        {/* Progress bar — hide on mobile to save space, show time inline */}
+        {!isMobile && (
         <div style={{ display:'flex', alignItems:'center', gap:'8px', width:'100%', fontSize:'11px', color:'#b3b3b3' }}>
           <span style={{ minWidth:'32px', textAlign:'right', fontVariantNumeric:'tabular-nums' }}>{formatTime(progress)}</span>
           <div
@@ -987,6 +1011,7 @@ export default function Room() {
           </div>
           <span style={{ minWidth:'32px', fontVariantNumeric:'tabular-nums' }}>{formatTime(duration)}</span>
         </div>
+        )}
       </div>
       {!isMobile && (
         <div style={{ width:'30%', display:'flex', justifyContent:'flex-end', alignItems:'center', color:'#b3b3b3', fontSize:'13px', gap:'6px', position:'relative', zIndex:1 }}>
