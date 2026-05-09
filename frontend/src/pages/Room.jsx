@@ -100,6 +100,25 @@ export default function Room() {
     return () => window.removeEventListener('resize', onResize);
   }, []);
 
+  // ── Mobile back-button intercept: push a history entry when entering the room,
+  // so pressing the hardware/browser back switches tabs instead of leaving the room
+  useEffect(() => {
+    if (!isMobile) return;
+    window.history.pushState({ room: true }, '');
+    const handlePop = () => {
+      // If on queue already, allow navigation; otherwise switch to queue
+      if (activeTab !== 'queue') {
+        setActiveTab('queue');
+        window.history.pushState({ room: true }, '');  // re-push so next back also intercepted
+      } else {
+        // Already on queue — let them leave
+        window.history.back();
+      }
+    };
+    window.addEventListener('popstate', handlePop);
+    return () => window.removeEventListener('popstate', handlePop);
+  }, [isMobile, activeTab]);
+
   // Debounced dynamic search — fires 500ms after user stops typing
   useEffect(() => {
     if (!searchTerm.trim()) return; // don't wipe results when modal opens
@@ -233,9 +252,17 @@ export default function Room() {
             socketRef.current?.emit('skip', roomId);
           }
           if (evt.data === window.YT.PlayerState.PLAYING) {
-            // Only update duration, do NOT call setIsPlaying here.
-            // State is managed exclusively by socket events to avoid feedback loops.
             setDuration(playerRef.current.getDuration?.() || 0);
+          }
+          // ── Earbud/headphone disconnect fix ──
+          // When earbuds disconnect, browser pauses YT player (state 2)
+          // We detect this and emit pause to server so ALL devices sync
+          if (evt.data === window.YT.PlayerState.PAUSED) {
+            if (isPlayingRef.current) {  // we thought it was playing → external pause
+              setIsPlaying(false);
+              isPlayingRef.current = false;
+              socketRef.current?.emit('pause', roomId);
+            }
           }
         }
       }
@@ -466,14 +493,13 @@ export default function Room() {
   const handleEnterRoom = () => {
     setHasInteracted(true);
     hasInteractedRef.current = true;
-    // If a track is already loaded (e.g. user joined mid-session), play it now
-    if (currentTrack?.youtubeId) {
+    // Request authoritative sync from server — this gives us current position
+    // The sync-state handler will seek to correct time and start playing
+    socketRef.current?.emit('request-sync', roomId);
+    // Also directly start the track if we have one (fallback in case sync-state is slow)
+    if (currentTrack?.youtubeId && isPlayerReadyRef.current) {
+      // loadAndPlay starts from 0 — sync-state will correct position shortly after
       loadAndPlay(currentTrack.youtubeId);
-    }
-    // If there's a pending video that was queued before user interacted, play it
-    if (pendingVideoRef.current && isPlayerReadyRef.current && playerRef.current?.loadVideoById) {
-      playerRef.current.loadVideoById(pendingVideoRef.current);
-      pendingVideoRef.current = null;
     }
   };
 
@@ -1117,17 +1143,22 @@ export default function Room() {
           {/* Mobile Top Bar */}
           <div style={{ background:'rgba(6,6,18,0.97)', padding:'10px 16px', display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0, borderBottom:'1px solid rgba(255,255,255,0.07)', backdropFilter:'blur(20px)' }}>
             <div style={{ display:'flex', alignItems:'center', gap:'8px' }}>
-              <Music color="#1DB954" size={22} />
-              <span style={{ fontWeight:'800', fontSize:'18px' }}>YourJam</span>
+              <Music color="#1DB954" size={20} />
+              <span style={{ fontWeight:'800', fontSize:'17px' }}>YourJam</span>
+              {activeTab !== 'queue' && (
+                <span style={{ color:'rgba(255,255,255,0.3)', fontSize:'11px', marginLeft:'4px' }}>
+                  / {activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}
+                </span>
+              )}
             </div>
-            <div style={{ display:'flex', alignItems:'center', gap:'12px' }}>
-              <div style={{ display:'flex', alignItems:'center', gap:'5px', color:'#b3b3b3', fontSize:'12px' }}>
-                <Users size={14} /><span>{userCount}</span>
+            <div style={{ display:'flex', alignItems:'center', gap:'10px' }}>
+              <div style={{ display:'flex', alignItems:'center', gap:'5px', color:'rgba(255,255,255,0.4)', fontSize:'12px' }}>
+                <Users size={13} /><span>{userCount}</span>
               </div>
-              <div style={{ background:'rgba(29,185,84,0.1)', border:'1px solid rgba(29,185,84,0.25)', borderRadius:'8px', padding:'5px 10px', display:'flex', alignItems:'center', gap:'8px' }}>
-                <span style={{ fontFamily:'monospace', fontSize:'13px', fontWeight:'800', letterSpacing:'3px', color:'#1DB954' }}>{roomId}</span>
-                <button onClick={copyRoomCode} style={{ background:'transparent', border:'none', cursor:'pointer', color:'#b3b3b3', display:'flex', padding:0 }}>
-                  {copied ? <CheckCircle2 size={16} color="#1DB954" /> : <Copy size={16} color="#b3b3b3" />}
+              <div style={{ background:'rgba(29,185,84,0.1)', border:'1px solid rgba(29,185,84,0.25)', borderRadius:'8px', padding:'4px 9px', display:'flex', alignItems:'center', gap:'6px' }}>
+                <span style={{ fontFamily:'monospace', fontSize:'12px', fontWeight:'800', letterSpacing:'2px', color:'#1DB954' }}>{roomId}</span>
+                <button onClick={copyRoomCode} style={{ background:'transparent', border:'none', cursor:'pointer', color:'rgba(255,255,255,0.4)', display:'flex', padding:0 }}>
+                  {copied ? <CheckCircle2 size={14} color="#1DB954" /> : <Copy size={14} color="rgba(255,255,255,0.4)" />}
                 </button>
               </div>
             </div>
