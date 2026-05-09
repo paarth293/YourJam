@@ -75,10 +75,11 @@ export default function Room() {
   const [duration, setDuration] = useState(0);
   const [hoveredTrack, setHoveredTrack] = useState(null);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
-  const [activeTab, setActiveTab] = useState('queue'); // 'queue' | 'search' | 'lyrics'
-  const [lyrics, setLyrics] = useState([]);       // [{time, text}]
+  const [activeTab, setActiveTab] = useState('queue');
+  const [lyrics, setLyrics] = useState([]);
   const [activeLine, setActiveLine] = useState(0);
   const [lyricsLoading, setLyricsLoading] = useState(false);
+  const [dominantColor, setDominantColor] = useState('29,185,84'); // r,g,b
   const lyricsContainerRef = useRef(null);
 
   const playerRef = useRef(null);
@@ -167,7 +168,30 @@ export default function Room() {
     }
   }, [progress, lyrics]);
 
-  // ─── Helper: load & play a video safely ────────────────────────────────────
+  // Extract dominant color from album art using Canvas
+  useEffect(() => {
+    if (!currentTrack?.albumArt) { setDominantColor('29,185,84'); return; }
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = 4; canvas.height = 4;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, 4, 4);
+        const d = ctx.getImageData(0, 0, 4, 4).data;
+        // Average the 4x4 pixels for a stable dominant color
+        let r=0,g=0,b=0;
+        for (let i=0;i<d.length;i+=4){r+=d[i];g+=d[i+1];b+=d[i+2];}
+        const n=d.length/4;
+        setDominantColor(`${Math.round(r/n)},${Math.round(g/n)},${Math.round(b/n)}`);
+      } catch { setDominantColor('29,185,84'); }
+    };
+    img.onerror = () => setDominantColor('29,185,84');
+    img.src = currentTrack.albumArt;
+  }, [currentTrack?.albumArt]);
+
+
   const loadAndPlay = useCallback((videoId) => {
     if (!videoId) return;
     if (isPlayerReadyRef.current && playerRef.current?.loadVideoById) {
@@ -385,8 +409,51 @@ export default function Room() {
   };
 
   const progressPct = duration > 0 ? (progress / duration) * 100 : 0;
+  const dc = dominantColor; // shorthand
 
-  // ─── Inline JSX helpers (NOT sub-components — avoids remount/focus loss) ──
+  // ─── Hero visual for desktop center ────────────────────────────────────────
+  const heroJSX = currentTrack ? (
+    <div style={{ position:'relative', overflow:'hidden', flexShrink:0, height:'280px', display:'flex', alignItems:'center', justifyContent:'center' }}>
+      {/* Blurred album art bg */}
+      <div style={{ position:'absolute', inset:0, backgroundImage:`url(${currentTrack.albumArt})`, backgroundSize:'cover', backgroundPosition:'center', filter:'blur(60px) saturate(2.5) brightness(0.55)', transform:'scale(1.4)', zIndex:0 }} />
+      {/* Dark gradient overlay */}
+      <div style={{ position:'absolute', inset:0, background:`linear-gradient(to bottom, rgba(0,0,0,0.1) 0%, rgba(${dc},0.15) 50%, #121212 100%)`, zIndex:1 }} />
+      {/* Floating orbs */}
+      {isPlaying && [0,1,2].map(i => (
+        <div key={i} className="aura" style={{ width:`${120+i*60}px`, height:`${120+i*60}px`, top:`${10+i*25}%`, left:`${15+i*28}%`, opacity:0.15, animationDelay:`${i*1.1}s`, zIndex:1 }} />
+      ))}
+      {/* Content */}
+      <div style={{ position:'relative', zIndex:2, display:'flex', alignItems:'center', gap:'28px', padding:'0 32px', width:'100%' }}>
+        {/* Spinning vinyl */}
+        <div className={isPlaying ? 'glow-playing' : ''} style={{ flexShrink:0, borderRadius:'50%', width:'160px', height:'160px', boxShadow:`0 8px 40px rgba(${dc},0.4)` }}>
+          <img src={currentTrack.albumArt} className={isPlaying ? 'vinyl-spinning' : 'vinyl-paused'} style={{ width:'160px', height:'160px', objectFit:'cover', display:'block' }} alt="" />
+        </div>
+        {/* Info */}
+        <div style={{ flex:1, minWidth:0 }}>
+          <p style={{ fontSize:'11px', fontWeight:'700', letterSpacing:'3px', textTransform:'uppercase', color:`rgba(${dc},1)`, marginBottom:'8px', opacity:0.9 }}>Now Playing</p>
+          <h2 style={{ fontSize:'28px', fontWeight:'900', lineHeight:'1.2', marginBottom:'6px', textShadow:`0 0 30px rgba(${dc},0.6)` }}>{currentTrack.name}</h2>
+          <p style={{ fontSize:'15px', color:'rgba(255,255,255,0.65)', marginBottom:'20px' }}>{currentTrack.artist}</p>
+          {/* Waveform visualizer */}
+          <div style={{ display:'flex', alignItems:'flex-end', gap:'3px', height:'36px' }}>
+            {Array.from({length:24}).map((_,i) => (
+              <div key={i} className={`eq-bar${isPlaying ? '' : ' eq-bar-paused'}`}
+                style={{ flex:1, background:`rgba(${dc},${0.5+Math.random()*0.5})`, height:`${8+Math.sin(i*0.8)*12}px`, animationDelay:`${(i*0.07)%0.9}s`, animationDuration:`${0.5+Math.random()*0.5}s` }}
+              />
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  ) : (
+    <div style={{ flexShrink:0, height:'200px', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:'12px', color:'#b3b3b3', position:'relative', overflow:'hidden' }}>
+      <div style={{ position:'absolute', inset:0, background:'radial-gradient(ellipse at 50% 100%, rgba(29,185,84,0.06) 0%, transparent 70%)' }} />
+      <div style={{ fontSize:'56px', animation:'aura-pulse 3s ease-in-out infinite' }}>🎵</div>
+      <p style={{ fontWeight:'700', fontSize:'17px' }}>Add a song to start the Jam!</p>
+      <p style={{ fontSize:'13px', opacity:0.6 }}>Search for a track to get things going</p>
+    </div>
+  );
+
+
   const trackListJSX = (tracks, isQueue) => tracks.map((track, i) => (
     <div
       key={track.id + (isQueue ? 'q' : '')}
@@ -486,17 +553,21 @@ export default function Room() {
   );
 
   const queuePanelJSX = (
-    <div style={{ flex:1, overflowY:'auto', padding: isMobile ? '16px' : '16px 24px 24px' }}>
-      <p style={{ fontSize: isMobile ? '18px' : '22px', fontWeight:'800', marginBottom:'16px' }}>Up Next</p>
-      {queue.length === 0 ? (
-        <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:'48px 24px', color:'#b3b3b3', border:'1px dashed rgba(255,255,255,0.1)', borderRadius:'12px', gap:'12px' }}>
-          <ListMusic size={48} style={{ opacity:0.3 }} />
-          <p style={{ fontWeight:'600' }}>Queue is empty</p>
-          <p style={{ fontSize:'13px' }}>Search for a song to start the jam!</p>
-        </div>
-      ) : trackListJSX(queue, true)}
+    <div style={{ flex:1, overflowY:'auto' }}>
+      {!isMobile && null}
+      <div style={{ padding: isMobile ? '16px' : '16px 24px 24px' }}>
+        <p style={{ fontSize: isMobile ? '18px' : '22px', fontWeight:'800', marginBottom:'16px' }}>Up Next</p>
+        {queue.length === 0 ? (
+          <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:'48px 24px', color:'#b3b3b3', border:'1px dashed rgba(255,255,255,0.1)', borderRadius:'12px', gap:'12px' }}>
+            <ListMusic size={48} style={{ opacity:0.3 }} />
+            <p style={{ fontWeight:'600' }}>Queue is empty</p>
+            <p style={{ fontSize:'13px' }}>Search for a song to start the jam!</p>
+          </div>
+        ) : trackListJSX(queue, true)}
+      </div>
     </div>
   );
+
 
   const playerBarJSX = (
     <div style={{ background:'#181818', borderTop:'1px solid #282828', padding: isMobile ? '8px 12px' : '0 16px', height: isMobile ? 'auto' : '90px', display:'flex', flexDirection: isMobile ? 'column' : 'row', alignItems:'center', justifyContent:'space-between', gap: isMobile ? '8px' : 0, flexShrink:0, position:'relative', overflow:'hidden' }}>
@@ -659,9 +730,12 @@ export default function Room() {
               )}
             </div>
             {/* Center Area */}
-            <div style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden', background:'linear-gradient(180deg, #2a2a2a 0%, #121212 300px)' }}>
-              {searchPanelJSX}
-              {!searchTerm && queuePanelJSX}
+            <div style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden', background:'#121212' }}>
+              {heroJSX}
+              <div style={{ flex:1, overflow:'hidden', display:'flex', flexDirection:'column' }}>
+                {searchPanelJSX}
+                {!searchTerm && queuePanelJSX}
+              </div>
             </div>
             {/* Lyrics Panel — always visible on desktop when a song is loaded */}
             <div style={{ width: lyrics.length || lyricsLoading ? '320px' : '0', flexShrink:0, overflow:'hidden', borderLeft: lyrics.length || lyricsLoading ? '1px solid #282828' : 'none', transition:'width 0.3s ease', display:'flex', flexDirection:'column', background:'#0d0d0d' }}>
