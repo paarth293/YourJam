@@ -76,7 +76,7 @@ export default function Room() {
 
   // Debounced dynamic search — fires 400ms after user stops typing
   useEffect(() => {
-    if (!searchTerm.trim()) { setSearchResults([]); return; }
+    if (!searchTerm.trim()) return; // don't wipe existing results when modal opens
     const timer = setTimeout(async () => {
       setIsSearching(true);
       try {
@@ -356,9 +356,16 @@ export default function Room() {
     setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'instant' }), 80);
   };
 
-  // Send an emoji reaction to all users
+  // Send an emoji reaction to all users + show it locally immediately
   const sendReaction = (emoji) => {
-    socketRef.current?.emit('reaction', { roomId, emoji });
+    if (!socketRef.current?.connected) return;
+    // Optimistic local update — don't wait for server echo
+    const localId = `local-${Date.now()}-${Math.random()}`;
+    const x = 8 + Math.random() * 84;
+    setReactions(prev => [...prev, { emoji, id: localId, x }]);
+    setTimeout(() => setReactions(prev => prev.filter(r => r.id !== localId)), 3000);
+    // Also emit to server so others see it
+    socketRef.current.emit('reaction', { roomId, emoji });
   };
 
   // Submit a track with an optional dedication note
@@ -387,7 +394,10 @@ export default function Room() {
     // Reset
     setPendingTrack(null);
     setDedicationText('');
+    setSearchTerm('');
+    setSearchResults([]);
     if (isMobile) setActiveTab('queue');
+
   };
 
 
@@ -438,11 +448,10 @@ export default function Room() {
 
 
   const handleAddTrack = (track) => {
-    // Open dedication modal — user can add a love note with the song
+    // Open dedication modal — keep search results visible
     setPendingTrack(track);
     setDedicationText('');
-    setSearchTerm('');
-    setSearchResults([]);
+    // Don't clear searchTerm/Results so user can see what they picked
   };
 
   const togglePlay = () => {
@@ -566,25 +575,29 @@ export default function Room() {
     <div key={r.id} className="reaction-particle" style={{ left:`${r.x}%` }}>{r.emoji}</div>
   ));
 
-  // ── 🎭 Reaction bar — floating pill of emoji buttons
+  // ── 🎭 Reaction bar — horizontal on mobile, vertical pill on desktop
   const EMOJIS = ['❤️','🔥','😍','🎵','✨','💫','😂','🎉','👏','💕'];
   const reactionBarJSX = hasInteracted ? (
-    <div style={{
-      position:'fixed', right:'16px', bottom:'106px', zIndex:200,
-      display:'flex', flexDirection:'column', gap:'6px', alignItems:'center',
-    }}>
-      <div style={{
-        background:'rgba(10,10,25,0.75)', backdropFilter:'blur(16px)',
-        border:'1px solid rgba(255,255,255,0.1)', borderRadius:'30px',
-        padding:'8px 6px', display:'flex', flexDirection:'column', gap:'4px',
-        boxShadow:'0 8px 32px rgba(0,0,0,0.5)',
-      }}>
-        {EMOJIS.map(e => (
-          <button key={e} className="react-btn" onClick={() => sendReaction(e)} title={`React with ${e}`}>{e}</button>
+    isMobile ? (
+      <div style={{ position:'fixed', left:'8px', bottom:'132px', zIndex:200, display:'flex', gap:'4px', flexWrap:'wrap', maxWidth:'190px' }}>
+        {EMOJIS.slice(0,8).map(e => (
+          <button key={e} className="react-btn" onClick={() => sendReaction(e)} style={{ width:'36px', height:'36px', fontSize:'18px' }}>{e}</button>
         ))}
       </div>
-    </div>
+    ) : (
+      <div style={{ position:'fixed', right:'16px', bottom:'110px', zIndex:200, display:'flex', flexDirection:'column', gap:'4px', alignItems:'center' }}>
+        <div style={{ background:'rgba(10,10,25,0.85)', backdropFilter:'blur(16px)', border:'1px solid rgba(255,255,255,0.1)', borderRadius:'28px', padding:'8px 6px', display:'flex', flexDirection:'column', gap:'3px', boxShadow:'0 8px 32px rgba(0,0,0,0.5)' }}>
+          <div style={{ display:'flex', justifyContent:'center', paddingBottom:'4px', borderBottom:'1px solid rgba(255,255,255,0.07)', marginBottom:'2px' }}>
+            <div style={{ width:'6px', height:'6px', borderRadius:'50%', background:'#1DB954' }} title="Connected" />
+          </div>
+          {EMOJIS.map(e => (
+            <button key={e} className="react-btn" onClick={() => sendReaction(e)} title={`React with ${e}`}>{e}</button>
+          ))}
+        </div>
+      </div>
+    )
   ) : null;
+
 
   // ── 💕 Vibing Together badge (when 2 people in room)
   const vibeJSX = userCount === 2 ? (
