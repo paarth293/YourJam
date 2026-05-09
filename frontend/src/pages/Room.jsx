@@ -580,9 +580,11 @@ export default function Room() {
   ));
 
   // ── 🎭 Reaction bar — collapsible pill (toggle button + emoji grid)
+  // Hide when chat is visible so it doesn't cover the send button
+  const chatIsVisible = chatOpen || activeTab === 'chat';
   const EMOJIS = ['❤️','🔥','😍','🎵','✨','💫','😂','🎉','👏','💕'];
-  const reactionBarJSX = hasInteracted ? (
-    <div style={{ position:'fixed', right:'12px', bottom:'112px', zIndex:200, display:'flex', flexDirection:'column', alignItems:'flex-end', gap:'6px' }}>
+  const reactionBarJSX = hasInteracted && !chatIsVisible ? (
+    <div style={{ position:'fixed', right:'12px', bottom:'120px', zIndex:200, display:'flex', flexDirection:'column', alignItems:'flex-end', gap:'6px' }}>
       {/* Expanded emoji grid */}
       {reactionBarOpen && (
         <div style={{
