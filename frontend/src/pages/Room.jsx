@@ -4,7 +4,7 @@ import io from 'socket.io-client';
 import axios from 'axios';
 import { Play, Pause, SkipForward, Search, Users, Copy, CheckCircle2, Music, ListMusic, MessageCircle, Send, X } from 'lucide-react';
 
-const SOCKET_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+const SOCKET_URL = import.meta.env.VITE_BACKEND_URL || `http://${window.location.hostname}:3001`;
 
 // Pre-computed stable EQ bar configs — defined outside component so Math.random never re-runs
 const EQ_BARS = Array.from({ length: 32 }, (_, i) => ({
