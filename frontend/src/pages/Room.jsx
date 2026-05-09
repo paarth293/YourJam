@@ -78,6 +78,7 @@ export default function Room() {
   const hasInteractedRef = useRef(false);
   const isPlayingRef = useRef(false);   // mirror of isPlaying for use in event listeners
   const currentTrackRef = useRef(null); // mirror of currentTrack to avoid stale closures
+  const silentAudioRef = useRef(null);  // Hack to keep background audio alive on mobile
   useEffect(() => { currentTrackRef.current = currentTrack; }, [currentTrack]);
 
   // ── MediaSession API: register as a media player so browser won't suspend us in background
@@ -580,6 +581,13 @@ export default function Room() {
     myUsername.current = name;
     setHasInteracted(true);
     hasInteractedRef.current = true;
+    
+    // START SILENT AUDIO HACK: Mobile browsers suspend iframes in the background.
+    // Natively playing an HTML5 audio element grabs the OS background audio session.
+    // The YT iframe then "rides along" and isn't suspended.
+    if (silentAudioRef.current) {
+      silentAudioRef.current.play().catch(e => console.log("Silent audio failed to start:", e));
+    }
     
     // Tell the backend our name for tracking/telemetry
     socketRef.current?.emit('identify', { roomId, username: name });
@@ -1192,20 +1200,31 @@ export default function Room() {
 
   // ─── Main Room UI ─────────────────────────────────────────────────────────
   return (
-    <div style={{ display:'flex', flexDirection:'column', height:'100dvh', width:'100vw', overflow:'hidden', backgroundColor:'#060612', color:'white' }}>
-      {notifJSX}
-      {confettiJSX}
-      {reactionParticlesJSX}
-      {reactionBarJSX}
-      {dedicationModalJSX}
-      {/* YouTube Player: position:fixed top-left, opacity nearly 0 but NOT 0.
-          opacity:0 or zIndex:-1 can cause browsers to kill the iframe audio pipeline.
-          4x4 ensures the browser treats it as a real visible element and keeps audio alive. */}
-      <div style={{ position:'fixed', top:0, left:0, width:'4px', height:'4px', opacity:0.01, pointerEvents:'none', zIndex:0, overflow:'hidden' }}>
+    <div style={{ position:'relative', height:'100dvh', width:'100vw', overflow:'hidden', backgroundColor:'#060612', color:'white' }}>
+      {/* ── BACKGROUND AUDIO HACK ── */}
+      {/* Plays silence endlessly to hold the mobile OS background audio lock */}
+      <audio 
+        ref={silentAudioRef} 
+        loop 
+        playsInline 
+        src="data:audio/mpeg;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjYxLjEuMTAwAAAAAAAAAAAAAAD/+0DEAAAAAABAAKWAAAAAQAAMAAAAP/7QgQAAAAAEEAApYAAAAAAAwAAAAAAA//tAxAAAAAAAQAClgAAAAEAADAAAAD/+0IEAAAAABBAAKWAAAAAAAMAAAAAAA//tAxAAAAAAAQAClgAAAAEAADAAAAD/+0IEAAAAABBAAKWAAAAAAAMAAAAAAA//tAxAAAAAAAQAClgAAAAEAADAAAAD/+0IEAAAAABBAAKWAAAAAAAMAAAAAAA//tAxAAAAAAAQAClgAAAAEAADAAAAD/+0IEAAAAABBAAKWAAAAAAAMAAAAAAA//tAxAAAAAAAQAClgAAAAEAADAAAAD/+0IEAAAAABBAAKWAAAAAAAMAAAAAAA" 
+      />
+
+      {/* ── YOUTUBE PLAYER (Anti-Suspension placement) ── */}
+      {/* Must be physically large so the browser thinks it's visible, but tucked behind UI (z-index 0) */}
+      <div style={{ position:'absolute', top:0, left:0, width:'100%', height:'100%', pointerEvents:'none', zIndex:0, overflow:'hidden', opacity: 0.01 }}>
         <div id="yt-player-container"></div>
       </div>
 
-      {!hasInteracted ? (
+      {/* ── MAIN APP CONTENT (z-index 10 covering the player) ── */}
+      <div style={{ display:'flex', flexDirection:'column', height:'100%', width:'100%', position:'relative', zIndex:10, backgroundColor:'#060612' }}>
+        {notifJSX}
+        {confettiJSX}
+        {reactionParticlesJSX}
+        {reactionBarJSX}
+        {dedicationModalJSX}
+
+        {!hasInteracted ? (
         <div className="grid-bg" style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', background:'#060612', padding:'20px' }}>
           {/* Radial glow */}
           <div style={{ position:'absolute', width:'600px', height:'600px', borderRadius:'50%', background:'radial-gradient(circle, rgba(29,185,84,0.12) 0%, transparent 70%)', pointerEvents:'none' }} />
@@ -1367,6 +1386,7 @@ export default function Room() {
           {playerBarJSX}
         </>
       )}
+      </div>
     </div>
 
   );
