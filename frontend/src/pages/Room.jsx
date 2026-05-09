@@ -926,7 +926,7 @@ export default function Room() {
 
 
   const playerBarJSX = (
-    <div style={{ background:'#181818', borderTop:'1px solid #282828', padding: isMobile ? '8px 12px' : '0 16px', height: isMobile ? 'auto' : '90px', display:'flex', flexDirection: isMobile ? 'column' : 'row', alignItems:'center', justifyContent:'space-between', gap: isMobile ? '8px' : 0, flexShrink:0, position:'relative', overflow:'hidden' }}>
+    <div style={{ background:'rgba(6,6,18,0.97)', borderTop:'1px solid rgba(255,255,255,0.07)', padding: isMobile ? '8px 12px' : '0 24px', height: isMobile ? 'auto' : '88px', display:'flex', flexDirection: isMobile ? 'column' : 'row', alignItems:'center', justifyContent:'space-between', gap: isMobile ? '8px' : 0, flexShrink:0, position:'relative', overflow:'hidden', backdropFilter:'blur(20px)' }}>
       {/* Background aura when playing */}
       {isPlaying && currentTrack && (
         <div className="aura" style={{ width:'300px', height:'300px', bottom:'-150px', left:'50%', transform:'translateX(-50%)' }} />
@@ -971,11 +971,21 @@ export default function Room() {
           </button>
         </div>
         <div style={{ display:'flex', alignItems:'center', gap:'8px', width:'100%', fontSize:'11px', color:'#b3b3b3' }}>
-          <span style={{ minWidth:'32px', textAlign:'right' }}>{formatTime(progress)}</span>
-          <div style={{ flex:1, height:'4px', background:'#4d4d4d', borderRadius:'4px', overflow:'hidden' }}>
-            <div className={isPlaying ? 'progress-playing' : ''} style={{ height:'100%', width:`${progressPct}%`, background: isPlaying ? undefined : 'white', borderRadius:'4px', transition: isPlaying ? 'width 0.5s linear' : 'width 0.5s linear, background 0.3s' }} />
+          <span style={{ minWidth:'32px', textAlign:'right', fontVariantNumeric:'tabular-nums' }}>{formatTime(progress)}</span>
+          <div
+            style={{ flex:1, height:'4px', background:'rgba(255,255,255,0.1)', borderRadius:'4px', overflow:'hidden', cursor:'pointer' }}
+            onClick={e => {
+              if (!currentTrack || !duration) return;
+              const rect = e.currentTarget.getBoundingClientRect();
+              const pct = (e.clientX - rect.left) / rect.width;
+              const seekTo = pct * duration;
+              playerRef.current?.seekTo?.(seekTo, true);
+              socketRef.current?.emit('seek', { roomId, time: seekTo });
+            }}
+          >
+            <div className={isPlaying ? 'progress-playing' : ''} style={{ height:'100%', width:`${progressPct}%`, background: isPlaying ? undefined : 'rgba(255,255,255,0.6)', borderRadius:'4px', transition:'width 0.5s linear' }} />
           </div>
-          <span style={{ minWidth:'32px' }}>{formatTime(duration)}</span>
+          <span style={{ minWidth:'32px', fontVariantNumeric:'tabular-nums' }}>{formatTime(duration)}</span>
         </div>
       </div>
       {!isMobile && (
@@ -1028,7 +1038,7 @@ export default function Room() {
         /* ── MOBILE LAYOUT ── */
         <>
           {/* Mobile Top Bar */}
-          <div style={{ background:'#000', padding:'12px 16px', display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0, borderBottom:'1px solid #282828' }}>
+          <div style={{ background:'rgba(6,6,18,0.97)', padding:'10px 16px', display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0, borderBottom:'1px solid rgba(255,255,255,0.07)', backdropFilter:'blur(20px)' }}>
             <div style={{ display:'flex', alignItems:'center', gap:'8px' }}>
               <Music color="#1DB954" size={22} />
               <span style={{ fontWeight:'800', fontSize:'18px' }}>YourJam</span>
@@ -1037,8 +1047,8 @@ export default function Room() {
               <div style={{ display:'flex', alignItems:'center', gap:'5px', color:'#b3b3b3', fontSize:'12px' }}>
                 <Users size={14} /><span>{userCount}</span>
               </div>
-              <div style={{ background:'#181818', borderRadius:'8px', padding:'6px 10px', display:'flex', alignItems:'center', gap:'8px' }}>
-                <span style={{ fontFamily:'monospace', fontSize:'14px', fontWeight:'800', letterSpacing:'3px', color:'#1DB954' }}>{roomId}</span>
+              <div style={{ background:'rgba(29,185,84,0.1)', border:'1px solid rgba(29,185,84,0.25)', borderRadius:'8px', padding:'5px 10px', display:'flex', alignItems:'center', gap:'8px' }}>
+                <span style={{ fontFamily:'monospace', fontSize:'13px', fontWeight:'800', letterSpacing:'3px', color:'#1DB954' }}>{roomId}</span>
                 <button onClick={copyRoomCode} style={{ background:'transparent', border:'none', cursor:'pointer', color:'#b3b3b3', display:'flex', padding:0 }}>
                   {copied ? <CheckCircle2 size={16} color="#1DB954" /> : <Copy size={16} color="#b3b3b3" />}
                 </button>
