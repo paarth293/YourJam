@@ -857,7 +857,7 @@ export default function Room() {
   ));
 
   const lyricsPanelJSX = (
-    <div ref={lyricsContainerRef} style={{ flex:1, overflowY:'auto', padding: isMobile ? '16px' : '16px 24px 24px', scrollBehavior:'smooth' }}>
+    <div ref={lyricsContainerRef} style={{ flex:1, minHeight:0, overflowY:'auto', padding: isMobile ? '16px' : '16px 24px 24px', scrollBehavior:'smooth' }}>
       {!currentTrack ? (
         <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'100%', color:'#b3b3b3', gap:'12px' }}>
           <span style={{ fontSize:'40px' }}>🎵</span>
@@ -903,7 +903,7 @@ export default function Room() {
 
   // ─── Chat Panel JSX ────────────────────────────────────────────────────────
   const chatPanelJSX = (
-    <div style={{ display:'flex', flexDirection:'column', height:'100%', overflow:'hidden' }}>
+    <div style={{ display:'flex', flexDirection:'column', flex:1, minHeight:0 }}>
       {/* Chat Header */}
       <div style={{ padding:'16px 20px 12px', borderBottom:'1px solid rgba(255,255,255,0.07)', display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0 }}>
         <div style={{ display:'flex', alignItems:'center', gap:'10px' }}>
@@ -922,8 +922,8 @@ export default function Room() {
         )}
       </div>
 
-      {/* Messages */}
-      <div style={{ flex:1, overflowY:'auto', padding:'16px', display:'flex', flexDirection:'column', gap:'10px' }}>
+      {/* Messages — flex:1 + minHeight:0 + overflowY:auto for proper scroll */}
+      <div style={{ flex:1, minHeight:0, overflowY:'auto', padding:'16px', display:'flex', flexDirection:'column', gap:'10px' }}>
         {messages.length === 0 ? (
           <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'100%', gap:'12px', color:'rgba(255,255,255,0.3)' }}>
             <MessageCircle size={40} style={{ opacity:0.3 }} />
@@ -1252,8 +1252,8 @@ export default function Room() {
             ))}
           </div>
 
-          {/* Mobile Tab Content */}
-          <div style={{ flex:1, overflow:'hidden', display:'flex', flexDirection:'column' }}>
+          {/* Mobile Tab Content — minHeight:0 is critical for flex children to scroll correctly */}
+          <div style={{ flex:1, minHeight:0, overflow:'hidden', display:'flex', flexDirection:'column' }}>
             {activeTab === 'search' ? searchPanelJSX : activeTab === 'lyrics' ? lyricsPanelJSX : activeTab === 'chat' ? chatPanelJSX : queuePanelJSX}
           </div>
           {playerBarJSX}

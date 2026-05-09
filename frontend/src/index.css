@@ -18,6 +18,10 @@ body {
   font-family: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
+  /* Mobile: lock body so custom scroll containers work correctly */
+  position: fixed;
+  width: 100%;
+  height: 100%;
 }
 
 /* ── Scrollbar ─────────────────────────────────────────────────────────────── */
