@@ -23,7 +23,11 @@ const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, UPLOAD_DIR),
   filename: (req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`)
 });
-const upload = multer({ storage });
+// Allow up to 50MB per file
+const upload = multer({ 
+  storage,
+  limits: { fileSize: 50 * 1024 * 1024 } // 50MB
+});
 
 app.use('/uploads', express.static(UPLOAD_DIR));
 
@@ -56,7 +60,13 @@ const io = socketIo(server, {
       "*"                               // safety fallback
     ],
     methods: ["GET", "POST"]
-  }
+  },
+  // ── Keep mobile clients alive even when browser is backgrounded ──
+  pingInterval: 10000,   // send a ping every 10s
+  pingTimeout: 60000,    // wait 60s before considering client dead
+  upgradeTimeout: 30000, // give 30s to upgrade from polling to WS
+  transports: ['websocket', 'polling'], // try WS first, fall back to polling
+  allowUpgrades: true,
 });
 
 // --- SPOTIFY SETUP ---

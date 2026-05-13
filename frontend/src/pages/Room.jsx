@@ -149,26 +149,29 @@ export default function Room() {
   useEffect(() => {
     const handleVisibility = () => {
       if (document.hidden) {
-        // Tab went to background — ensure wake lock is active if playing
-        if (isPlayingRef.current) {
-          requestWakeLock();
-        }
+        // Going to background — keep wake lock active
+        if (isPlayingRef.current) requestWakeLock();
         return;
       }
       
-      // Tab is visible again — if we should be playing, kick the player
+      // Returning to foreground — restart silent audio (it may have been suspended by OS)
+      if (silentAudioRef.current && silentAudioRef.current.paused) {
+        silentAudioRef.current.play().catch(() => {});
+      }
+
+      // Resume YT player if it was playing
       if (isPlayingRef.current && isPlayerReadyRef.current && playerRef.current) {
         setTimeout(() => {
           try {
             const state = playerRef.current?.getPlayerState?.();
-            // 2 = paused, -1 = unstarted/ended — resume in either case
             if (state === 2 || state === -1 || state === 0) {
               playerRef.current.playVideo?.();
             }
           } catch (_) {}
         }, 400);
       }
-      // Also ask server for the authoritative position so we can seek to correct time
+
+      // Re-sync with server authoritative position
       socketRef.current?.emit('request-sync', roomId);
     };
     document.addEventListener('visibilitychange', handleVisibility);
@@ -176,7 +179,7 @@ export default function Room() {
       document.removeEventListener('visibilitychange', handleVisibility);
       releaseWakeLock();
     };
-  }, [roomId]);  // roomId is stable, refs handle the rest
+  }, [roomId]);
 
   // ── Screen Wake Lock API: Prevent mobile sleep
   const requestWakeLock = async () => {
@@ -396,11 +399,34 @@ export default function Room() {
 
   // ─── Socket.IO Setup ──────────────────────────────────────────────────────
   useEffect(() => {
-    const socket = io(SOCKET_URL, { reconnection: true });
+    const socket = io(SOCKET_URL, {
+      reconnection: true,
+      reconnectionAttempts: Infinity,   // never give up
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      timeout: 20000,
+      transports: ['websocket', 'polling'],
+    });
     socketRef.current = socket;
 
+    // On reconnect, re-join the room so state is restored
     socket.on('connect', () => {
+      console.log('✅ Socket connected:', socket.id);
       socket.emit('join-room', { roomId });
+    });
+
+    socket.on('reconnect', (attempt) => {
+      console.log('🔁 Reconnected after', attempt, 'attempts. Re-joining room...');
+      socket.emit('join-room', { roomId });
+      if (myUsername.current) socket.emit('identify', { roomId, username: myUsername.current });
+      // Re-sync playhead
+      setTimeout(() => socket.emit('request-sync', roomId), 300);
+    });
+
+    socket.on('disconnect', (reason) => {
+      console.warn('⚠️ Socket disconnected:', reason);
+      // If the server dropped us, socket.io will auto-reconnect
+      // If we called disconnect() manually, it won't — that's intentional
     });
 
     socket.on('error', (err) => {
@@ -560,10 +586,23 @@ export default function Room() {
       }
     }, 10000);
 
+    // ── Silent Audio Keep-Alive: Restart if OS suspended it while we're playing
+    // This is the primary defence against iOS/Android killing background audio
+    const audioKeepAlive = setInterval(() => {
+      const audio = silentAudioRef.current;
+      if (!audio) return;
+      // If it should be playing (not a local track that was paused intentionally)
+      // but the OS suspended it, restart it.
+      if (audio.paused && isPlayingRef.current) {
+        audio.play().catch(() => {});
+      }
+    }, 4000);
+
     return () => {
       socket.disconnect();
       clearInterval(progressIntervalRef.current);
       clearInterval(swHeartbeat);
+      clearInterval(audioKeepAlive);
       clearTimeout(notifTimer.current);
     };
   }, [roomId, navigate, loadAndPlay]);
