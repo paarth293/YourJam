@@ -6,12 +6,26 @@ const SpotifyWebApi = require('spotify-web-api-node');
 const axios = require('axios');
 const dotenv = require('dotenv');
 const fs = require('fs');
+const multer = require('multer');
+const path = require('path');
 
 dotenv.config();
 
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+// --- UPLOAD SETUP ---
+const UPLOAD_DIR = path.join(__dirname, 'uploads');
+if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR);
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, UPLOAD_DIR),
+  filename: (req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`)
+});
+const upload = multer({ storage });
+
+app.use('/uploads', express.static(UPLOAD_DIR));
 
 // --- TELEMETRY / DISCORD WEBHOOK ---
 async function sendWebhook(title, description, color = 1943124) {
@@ -140,6 +154,39 @@ app.get('/api/search', async (req, res) => {
   }
 });
 
+app.get('/api/playlist', async (req, res) => {
+  const { id } = req.query;
+  if (!id) return res.status(400).json({ error: 'Playlist ID is required' });
+  if (!spotifyApi.getAccessToken()) return res.status(500).json({ error: 'Spotify not initialized' });
+
+  try {
+    // Get tracks from the playlist (limit to 50 for performance)
+    const data = await spotifyApi.getPlaylistTracks(id, { limit: 50 });
+    // Filter out null tracks (can happen if a track is deleted or unavailable)
+    const tracks = data.body.items
+      .map(item => item.track)
+      .filter(t => t && t.id);
+    res.json(tracks);
+  } catch (error) {
+    console.error("Spotify playlist error:", error);
+    res.status(500).json({ error: 'Failed to fetch playlist. Is it public?' });
+  }
+});
+
+app.post('/api/upload', upload.single('file'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+  
+  // Return a track-like object that the frontend can send to the socket
+  res.json({
+    id: `local-${Date.now()}`,
+    name: req.file.originalname.split('.').slice(0, -1).join('.'), // strip extension
+    artist: 'Uploaded Track',
+    albumArt: 'https://cdn-icons-png.flaticon.com/512/3039/3039401.png', // default music icon
+    isLocal: true,
+    fileUrl: `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`
+  });
+});
+
 // --- SOCKET.IO ROOMS LOGIC ---
 const rooms = new Map(); // roomId -> { users, queue, currentTrack, currentTime, isPlaying }
 
@@ -201,17 +248,28 @@ io.on('connection', (socket) => {
     roomId = roomId.toUpperCase();
     const room = rooms.get(roomId);
     if (room) {
-      const artistName = track.artists && track.artists.length > 0 ? track.artists[0].name : '';
-      const youtubeId = await getYoutubeId(track.name, artistName);
+      let trackToAdd;
       
-      const trackToAdd = {
-        id: track.id + '-' + Date.now(), // Ensure unique ID in queue
-        spotifyId: track.id,
-        name: track.name,
-        artist: artistName,
-        albumArt: track.album && track.album.images ? track.album.images[0].url : '',
-        youtubeId: youtubeId
-      };
+      if (track.isLocal) {
+        // Use the track as is if it's already a local upload object
+        trackToAdd = {
+          ...track,
+          id: `${track.id}-${Date.now()}` // uniqueness
+        };
+      } else {
+        // Normal Spotify track -> find YouTube audio
+        const artistName = track.artists && track.artists.length > 0 ? track.artists[0].name : '';
+        const youtubeId = await getYoutubeId(track.name, artistName);
+        
+        trackToAdd = {
+          id: `${track.id}-${Date.now()}`,
+          spotifyId: track.id,
+          name: track.name,
+          artist: artistName,
+          albumArt: track.album && track.album.images ? track.album.images[0].url : '',
+          youtubeId: youtubeId
+        };
+      }
       
       room.queue.push(trackToAdd);
       

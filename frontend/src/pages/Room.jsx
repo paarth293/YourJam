@@ -80,6 +80,8 @@ export default function Room() {
   const currentTrackRef = useRef(null); // mirror of currentTrack to avoid stale closures
   const silentAudioRef = useRef(null);  // Hack to keep background audio alive on mobile
   const wakeLockRef = useRef(null);     // Keep screen/process awake
+  const fileInputRef = useRef(null);   // Hidden file input
+  const [isUploading, setIsUploading] = useState(false);
   useEffect(() => { currentTrackRef.current = currentTrack; }, [currentTrack]);
 
   // ── MediaSession API: register as a media player so browser won't suspend us in background
@@ -98,13 +100,21 @@ export default function Room() {
       if (socketRef.current?.connected) socketRef.current.emit('play', roomId);
       setIsPlaying(true);
       isPlayingRef.current = true;
-      playerRef.current?.playVideo?.();
+      if (currentTrackRef.current?.isLocal) {
+        silentAudioRef.current?.play().catch(() => {});
+      } else {
+        playerRef.current?.playVideo?.();
+      }
     });
     navigator.mediaSession.setActionHandler('pause', () => {
       if (socketRef.current?.connected) socketRef.current.emit('pause', roomId);
       setIsPlaying(false);
       isPlayingRef.current = false;
-      playerRef.current?.pauseVideo?.();
+      if (currentTrackRef.current?.isLocal) {
+        silentAudioRef.current?.pause();
+      } else {
+        playerRef.current?.pauseVideo?.();
+      }
     });
     navigator.mediaSession.setActionHandler('nexttrack', () => {
       socketRef.current?.emit('skip', roomId);
@@ -413,17 +423,25 @@ export default function Room() {
         const playerState = playerRef.current.getPlayerState?.();
         const correctedTime = (sTime || 0) + 0.5;  // +0.5s to cover network roundtrip
 
-        if (playerState === -1 || playerState === 0) {
-          // Player has no video / ended — load fresh with correct start time
-          playerRef.current.loadVideoById({ videoId: sTrack.youtubeId, startSeconds: correctedTime });
-          if (!sPlaying) setTimeout(() => playerRef.current?.pauseVideo?.(), 600);
+        if (sTrack.isLocal) {
+          // Local track sync
+          if (silentAudioRef.current) {
+            silentAudioRef.current.currentTime = correctedTime;
+            if (sPlaying) silentAudioRef.current.play().catch(() => {});
+            else silentAudioRef.current.pause();
+          }
         } else {
-          // Video already loaded — just seek to correct position
-          playerRef.current.seekTo?.(correctedTime, true);
-          if (sPlaying) {
-            setTimeout(() => playerRef.current?.playVideo?.(), 300);
+          // YouTube track sync
+          if (playerState === -1 || playerState === 0) {
+            playerRef.current.loadVideoById({ videoId: sTrack.youtubeId, startSeconds: correctedTime });
+            if (!sPlaying) setTimeout(() => playerRef.current?.pauseVideo?.(), 600);
           } else {
-            playerRef.current.pauseVideo?.();
+            playerRef.current.seekTo?.(correctedTime, true);
+            if (sPlaying) {
+              setTimeout(() => playerRef.current?.playVideo?.(), 300);
+            } else {
+              playerRef.current.pauseVideo?.();
+            }
           }
         }
       }
@@ -439,9 +457,26 @@ export default function Room() {
       setProgress(0);
       setDuration(0);
       setIsPlaying(!!track);
-      if (track?.youtubeId && hasInteractedRef.current) {
+      
+      if (track?.isLocal) {
+        // Stop YT player if it's playing
+        playerRef.current?.pauseVideo?.();
+        // Setup local audio
+        if (silentAudioRef.current) {
+          silentAudioRef.current.src = track.fileUrl;
+          silentAudioRef.current.loop = false;
+          silentAudioRef.current.play().catch(() => {});
+        }
+      } else if (track?.youtubeId && hasInteractedRef.current) {
+        // Reset silent hack to silence
+        if (silentAudioRef.current) {
+          silentAudioRef.current.src = "data:audio/mpeg;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjYxLjEuMTAwAAAAAAAAAAAAAAD/+0DEAAAAAABAAKWAAAAAQAAMAAAAP/7QgQAAAAAEEAApYAAAAAAAwAAAAAAA//tAxAAAAAAAQAClgAAAAEAADAAAAD/+0IEAAAAABBAAKWAAAAAAAMAAAAAAA//tAxAAAAAAAQAClgAAAAEAADAAAAD/+0IEAAAAABBAAKWAAAAAAAMAAAAAAA//tAxAAAAAAAQAClgAAAAEAADAAAAD/+0IEAAAAABBAAKWAAAAAAAMAAAAAAA//tAxAAAAAAAQAClgAAAAEAADAAAAD/+0IEAAAAABBAAKWAAAAAAAMAAAAAAA//tAxAAAAAAAQAClgAAAAEAADAAAAD/+0IEAAAAABBAAKWAAAAAAAMAAAAAAA//tAxAAAAAAAQAClgAAAAEAADAAAAD/+0IEAAAAABBAAKWAAAAAAAMAAAAAAA";
+          silentAudioRef.current.loop = true;
+          silentAudioRef.current.play().catch(() => {});
+        }
         loadAndPlay(track.youtubeId);
       }
+      
       // 🎊 Confetti burst on every new song
       if (track) {
         setShowConfetti(true);
@@ -452,9 +487,12 @@ export default function Room() {
     socket.on('play', () => {
       setIsPlaying(true);
       isPlayingRef.current = true;
-      if (isPlayerReadyRef.current && playerRef.current) {
+      const track = currentTrackRef.current;
+      
+      if (track?.isLocal) {
+        silentAudioRef.current?.play().catch(() => {});
+      } else if (isPlayerReadyRef.current && playerRef.current) {
         const state = playerRef.current.getPlayerState?.();
-        const track = currentTrackRef.current; // use ref, not stale closure
         if (state === -1 && track?.youtubeId) {
           playerRef.current.loadVideoById(track.youtubeId);
         } else {
@@ -466,14 +504,18 @@ export default function Room() {
     socket.on('pause', () => {
       setIsPlaying(false);
       // Always pause — no hasInteracted guard, server is source of truth
-      if (isPlayerReadyRef.current && playerRef.current) {
+      if (currentTrackRef.current?.isLocal) {
+        silentAudioRef.current?.pause();
+      } else if (isPlayerReadyRef.current && playerRef.current) {
         playerRef.current.pauseVideo?.();
       }
     });
 
     socket.on('seek', (time) => {
       setProgress(time);
-      if (isPlayerReadyRef.current && playerRef.current?.seekTo && hasInteractedRef.current) {
+      if (currentTrackRef.current?.isLocal) {
+        if (silentAudioRef.current) silentAudioRef.current.currentTime = time;
+      } else if (isPlayerReadyRef.current && playerRef.current?.seekTo && hasInteractedRef.current) {
         playerRef.current.seekTo(time, true);
       }
     });
@@ -618,7 +660,15 @@ export default function Room() {
       requestWakeLock();
       
       progressIntervalRef.current = setInterval(() => {
-        if (isPlayerReadyRef.current && playerRef.current?.getCurrentTime) {
+        if (currentTrackRef.current?.isLocal) {
+          if (silentAudioRef.current) {
+            const t = silentAudioRef.current.currentTime;
+            const d = silentAudioRef.current.duration || 0;
+            setProgress(t);
+            setDuration(d);
+            socketRef.current?.emit('sync-time', { roomId, time: t });
+          }
+        } else if (isPlayerReadyRef.current && playerRef.current?.getCurrentTime) {
           const t = playerRef.current.getCurrentTime();
           const d = playerRef.current.getDuration?.() || 0;
           setProgress(t);
@@ -687,15 +737,19 @@ export default function Room() {
   };
 
   const togglePlay = () => {
-    if (!currentTrack || !isPlayerReadyRef.current) return;
+    if (!currentTrack) return;
     if (isPlaying) {
       // Pause immediately locally, then broadcast
-      playerRef.current?.pauseVideo?.();
+      if (currentTrack.isLocal) silentAudioRef.current?.pause();
+      else playerRef.current?.pauseVideo?.();
+      
       setIsPlaying(false);
       socketRef.current?.emit('pause', roomId);
     } else {
       // Play immediately locally, then broadcast
-      playerRef.current?.playVideo?.();
+      if (currentTrack.isLocal) silentAudioRef.current?.play().catch(() => {});
+      else playerRef.current?.playVideo?.();
+      
       setIsPlaying(true);
       socketRef.current?.emit('play', roomId);
     }
@@ -707,6 +761,39 @@ export default function Room() {
 
   const handleRemoveTrack = (trackId) => {
     socketRef.current?.emit('remove-track', { roomId, trackId });
+  };
+
+  const handleImportPlaylist = async () => {
+    let input = prompt("Paste a Spotify Playlist URL or ID:");
+    if (!input) return;
+    
+    // Extract ID from URL if necessary
+    let playlistId = input;
+    if (input.includes('spotify.com/playlist/')) {
+      playlistId = input.split('playlist/')[1].split('?')[0];
+    }
+
+    setIsSearching(true);
+    try {
+      const res = await axios.get(`${SOCKET_URL}/api/playlist?id=${playlistId}`);
+      const tracks = res.data;
+      if (tracks && tracks.length > 0) {
+        // Add tracks one by one or in a batch if the backend supported it, 
+        // but the current add-track event is single-track. 
+        // For now, loop with a small delay to not overwhelm the socket/YT API
+        for (const track of tracks) {
+          socketRef.current?.emit('add-track', { roomId, track });
+          await new Promise(r => setTimeout(r, 100)); // small stagger
+        }
+        alert(`Successfully imported ${tracks.length} tracks!`);
+      } else {
+        alert("No tracks found in this playlist.");
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Failed to import playlist. Make sure it is public.');
+    }
+    setIsSearching(false);
   };
 
   const handleLeaveRoom = () => {
@@ -1112,13 +1199,43 @@ export default function Room() {
               background:'rgba(255,255,255,0.07)',
               border:'1px solid rgba(255,255,255,0.1)',
               borderRadius:'50px', color:'white',
-              padding:'11px 20px 11px 46px',
+              padding:'11px 80px 11px 46px', // extra right padding for playlist btn
               fontSize:'14px', outline:'none',
               fontFamily:'inherit',
               transition:'border-color 0.2s, background 0.2s',
             }}
             onFocus={e => { e.currentTarget.style.background='rgba(255,255,255,0.11)'; e.currentTarget.style.borderColor='rgba(29,185,84,0.5)'; }}
             onBlur={e =>  { e.currentTarget.style.background='rgba(255,255,255,0.07)'; e.currentTarget.style.borderColor='rgba(255,255,255,0.1)'; }}
+          />
+          <button 
+            onClick={handleImportPlaylist}
+            title="Import Spotify Playlist"
+            style={{ position:'absolute', right:'44px', top:'50%', transform:'translateY(-50%)', background:'transparent', border:'none', color:'#1DB954', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', padding:'4px', opacity: 0.7 }}
+            onMouseEnter={e => e.currentTarget.style.opacity = 1}
+            onMouseLeave={e => e.currentTarget.style.opacity = 0.7}
+          >
+            <ListMusic size={18} />
+          </button>
+          <button 
+            onClick={() => fileInputRef.current?.click()}
+            title="Upload Song from Device"
+            disabled={isUploading}
+            style={{ position:'absolute', right:'14px', top:'50%', transform:'translateY(-50%)', background:'transparent', border:'none', color:'#1DB954', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', padding:'4px', opacity: isUploading ? 0.4 : 0.7 }}
+            onMouseEnter={e => { if(!isUploading) e.currentTarget.style.opacity = 1 }}
+            onMouseLeave={e => { if(!isUploading) e.currentTarget.style.opacity = 0.7 }}
+          >
+            {isUploading ? (
+              <div style={{ width:'16px', height:'16px', border:'2px solid rgba(29,185,84,0.2)', borderTop:'2px solid #1DB954', borderRadius:'50%', animation:'vinyl-spin 0.7s linear infinite' }} />
+            ) : (
+              <Music size={18} />
+            )}
+          </button>
+          <input 
+            type="file" 
+            ref={fileInputRef} 
+            onChange={handleFileUpload} 
+            accept="audio/*" 
+            style={{ display:'none' }} 
           />
           {isSearching && (
             <span style={{ position:'absolute', right:'16px', top:'50%', transform:'translateY(-50%)' }}>
@@ -1289,12 +1406,20 @@ export default function Room() {
   // ─── Main Room UI ─────────────────────────────────────────────────────────
   return (
     <div style={{ position:'relative', height:'100dvh', width:'100vw', overflow:'hidden', backgroundColor:'#121212', color:'white' }}>
-      {/* ── BACKGROUND AUDIO HACK ── */}
-      {/* Plays silence endlessly to hold the mobile OS background audio lock */}
+      {/* ── BACKGROUND AUDIO HACK / LOCAL PLAYER ── */}
+      {/* Plays silence endlessly OR plays the local uploaded song */}
       <audio 
         ref={silentAudioRef} 
-        loop 
+        loop={!currentTrack?.isLocal} 
         playsInline 
+        onEnded={() => {
+          if (currentTrack?.isLocal) socketRef.current?.emit('skip', roomId);
+        }}
+        onLoadedMetadata={() => {
+          if (currentTrack?.isLocal && silentAudioRef.current) {
+            setDuration(silentAudioRef.current.duration);
+          }
+        }}
         src="data:audio/mpeg;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjYxLjEuMTAwAAAAAAAAAAAAAAD/+0DEAAAAAABAAKWAAAAAQAAMAAAAP/7QgQAAAAAEEAApYAAAAAAAwAAAAAAA//tAxAAAAAAAQAClgAAAAEAADAAAAD/+0IEAAAAABBAAKWAAAAAAAMAAAAAAA//tAxAAAAAAAQAClgAAAAEAADAAAAD/+0IEAAAAABBAAKWAAAAAAAMAAAAAAA//tAxAAAAAAAQAClgAAAAEAADAAAAD/+0IEAAAAABBAAKWAAAAAAAMAAAAAAA//tAxAAAAAAAQAClgAAAAEAADAAAAD/+0IEAAAAABBAAKWAAAAAAAMAAAAAAA//tAxAAAAAAAQAClgAAAAEAADAAAAD/+0IEAAAAABBAAKWAAAAAAAMAAAAAAA" 
       />
 
