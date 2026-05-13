@@ -601,22 +601,24 @@ export default function Room() {
     setChatOpen(true);
     setUnread(0);
     setChatNotif(null);
-    setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'instant' }), 80);
+    setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 300);
   };
 
-  // Send an emoji reaction to all users + show it locally immediately
   const sendReaction = (emoji) => {
-    // Generate a stable ID to track this reaction across local + server echo
-    const reactionId = `${Date.now()}-${Math.random()}`;
+    const localId = `local-${Date.now()}-${Math.random()}`;
     const x = 8 + Math.random() * 84;
-    // Show immediately on sender's screen
-    setReactions(prev => [...prev, { emoji, id: reactionId, x }]);
-    setTimeout(() => setReactions(prev => prev.filter(r => r.id !== reactionId)), 3000);
-    // Mark as locally sent so socket listener doesn't double-show it
-    sentReactionIds.current.add(reactionId);
-    // Emit to server with the same ID
+    const newReaction = { emoji, id: localId, x };
+    
+    // Show locally immediately (optimistic)
+    setReactions(prev => [...prev, newReaction]);
+    sentReactionIds.current.add(localId);
+    
+    // Remove after 3s
+    setTimeout(() => setReactions(prev => prev.filter(r => r.id !== localId)), 3000);
+    
+    // Emit to server so others see it
     if (socketRef.current?.connected) {
-      socketRef.current.emit('reaction', { roomId, emoji, localId: reactionId });
+      socketRef.current.emit('reaction', { roomId, emoji, localId });
     }
   };
 
@@ -794,6 +796,29 @@ export default function Room() {
       alert('Failed to import playlist. Make sure it is public.');
     }
     setIsSearching(false);
+  };
+
+  const handleFileUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    setIsUploading(true);
+    try {
+      const res = await axios.post(`${SOCKET_URL}/api/upload`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      socketRef.current?.emit('add-track', { roomId, track: res.data });
+      if (isMobile) setActiveTab('queue');
+    } catch (err) {
+      console.error(err);
+      alert('Upload failed. Try a smaller file.');
+    } finally {
+      setIsUploading(false);
+      e.target.value = ''; // reset
+    }
   };
 
   const handleLeaveRoom = () => {
@@ -1305,7 +1330,7 @@ export default function Room() {
       backdropFilter:'blur(20px)',
       flexShrink:0,
       position:'relative',
-      zIndex:10,
+      zIndex:100,
       // Mobile: compact single row; Desktop: 3-col tall bar
       height: isMobile ? '64px' : '88px',
       display:'flex',
@@ -1315,6 +1340,25 @@ export default function Room() {
       gap: isMobile ? '10px' : '0',
       justifyContent:'space-between',
     }}>
+      {/* Top running progress bar (Spotify style) */}
+      <div 
+        onClick={e => {
+          if (!currentTrack || !duration) return;
+          const rect = e.currentTarget.getBoundingClientRect();
+          const seekTo = ((e.clientX - rect.left) / rect.width) * duration;
+          // Use hybrid seek logic
+          if (currentTrack.isLocal) {
+            if (silentAudioRef.current) silentAudioRef.current.currentTime = seekTo;
+          } else {
+            playerRef.current?.seekTo?.(seekTo, true);
+          }
+          socketRef.current?.emit('seek', { roomId, time: seekTo });
+        }}
+        style={{ position:'absolute', top:0, left:0, right:0, height:'3px', background:'rgba(255,255,255,0.1)', zIndex:2, cursor:'pointer' }}
+      >
+        <div style={{ height:'100%', width:`${progressPct}%`, background:'#1DB954', transition:'width 0.5s linear', boxShadow:'0 0 10px rgba(29,185,84,0.5)' }} />
+      </div>
+
       {/* Ambient aura — pointer-events:none so it never blocks */}
       {isPlaying && currentTrack && (
         <div className="aura" style={{ position:'absolute', width:'300px', height:'300px', bottom:'-150px', left:'50%', transform:'translateX(-50%)', pointerEvents:'none', zIndex:0 }} />
@@ -1336,7 +1380,10 @@ export default function Room() {
                   ))}
                 </div>
               </div>
-              <div style={{ color:'rgba(255,255,255,0.4)', fontSize:'12px', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{currentTrack.artist}</div>
+              <div style={{ display:'flex', alignItems:'center', gap:'8px' }}>
+                <div style={{ color:'rgba(255,255,255,0.4)', fontSize:'12px', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{currentTrack.artist}</div>
+                {isMobile && <div style={{ fontSize:'10px', color:'#1DB954', fontWeight:'600', background:'rgba(29,185,84,0.1)', padding:'1px 4px', borderRadius:'4px' }}>{formatTime(progress)} / {formatTime(duration)}</div>}
+              </div>
             </div>
           </>
         ) : (
