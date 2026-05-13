@@ -79,6 +79,7 @@ export default function Room() {
   const isPlayingRef = useRef(false);   // mirror of isPlaying for use in event listeners
   const currentTrackRef = useRef(null); // mirror of currentTrack to avoid stale closures
   const silentAudioRef = useRef(null);  // Hack to keep background audio alive on mobile
+  const wakeLockRef = useRef(null);     // Keep screen/process awake
   useEffect(() => { currentTrackRef.current = currentTrack; }, [currentTrack]);
 
   // ── MediaSession API: register as a media player so browser won't suspend us in background
@@ -114,8 +115,22 @@ export default function Room() {
   useEffect(() => {
     isPlayingRef.current = isPlaying;
     if (!('mediaSession' in navigator)) return;
+    
     navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
-  }, [isPlaying]);
+
+    // Update position state for the OS lock screen
+    if (isPlaying && duration > 0) {
+      try {
+        navigator.mediaSession.setPositionState({
+          duration: duration || 0,
+          playbackRate: 1,
+          position: progress || 0,
+        });
+      } catch (e) {
+        console.error("MediaSession setPositionState error:", e);
+      }
+    }
+  }, [isPlaying, duration, progress]);
 
   // Keep hasInteractedRef in sync
   useEffect(() => { hasInteractedRef.current = hasInteracted; }, [hasInteracted]);
@@ -123,7 +138,14 @@ export default function Room() {
   // ── Resume playback when user switches back to this tab (mobile tab switching fix)
   useEffect(() => {
     const handleVisibility = () => {
-      if (document.hidden) return;  // tab went away — do nothing
+      if (document.hidden) {
+        // Tab went to background — ensure wake lock is active if playing
+        if (isPlayingRef.current) {
+          requestWakeLock();
+        }
+        return;
+      }
+      
       // Tab is visible again — if we should be playing, kick the player
       if (isPlayingRef.current && isPlayerReadyRef.current && playerRef.current) {
         setTimeout(() => {
@@ -140,8 +162,34 @@ export default function Room() {
       socketRef.current?.emit('request-sync', roomId);
     };
     document.addEventListener('visibilitychange', handleVisibility);
-    return () => document.removeEventListener('visibilitychange', handleVisibility);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility);
+      releaseWakeLock();
+    };
   }, [roomId]);  // roomId is stable, refs handle the rest
+
+  // ── Screen Wake Lock API: Prevent mobile sleep
+  const requestWakeLock = async () => {
+    if ('wakeLock' in navigator && !wakeLockRef.current) {
+      try {
+        wakeLockRef.current = await navigator.wakeLock.request('screen');
+        console.log('✅ Wake Lock active');
+        wakeLockRef.current.addEventListener('release', () => {
+          console.log('🔒 Wake Lock released');
+          wakeLockRef.current = null;
+        });
+      } catch (err) {
+        console.error(`${err.name}, ${err.message}`);
+      }
+    }
+  };
+
+  const releaseWakeLock = () => {
+    if (wakeLockRef.current) {
+      wakeLockRef.current.release();
+      wakeLockRef.current = null;
+    }
+  };
 
   // Responsive: track window width
   useEffect(() => {
@@ -463,9 +511,17 @@ export default function Room() {
       }
     });
 
+    // ── Service Worker Heartbeat: Keep background process alive
+    const swHeartbeat = setInterval(() => {
+      if (navigator.serviceWorker?.controller) {
+        navigator.serviceWorker.controller.postMessage({ type: 'KEEP_ALIVE' });
+      }
+    }, 10000);
+
     return () => {
       socket.disconnect();
       clearInterval(progressIntervalRef.current);
+      clearInterval(swHeartbeat);
       clearTimeout(notifTimer.current);
     };
   }, [roomId, navigate, loadAndPlay]);
@@ -558,6 +614,9 @@ export default function Room() {
   useEffect(() => {
     clearInterval(progressIntervalRef.current);
     if (isPlaying && hasInteracted) {
+      // Request wake lock while playing
+      requestWakeLock();
+      
       progressIntervalRef.current = setInterval(() => {
         if (isPlayerReadyRef.current && playerRef.current?.getCurrentTime) {
           const t = playerRef.current.getCurrentTime();
@@ -565,8 +624,15 @@ export default function Room() {
           setProgress(t);
           setDuration(d);
           socketRef.current?.emit('sync-time', { roomId, time: t });
+          
+          // Ensure silent audio stays playing (sometimes mobile pauses it)
+          if (silentAudioRef.current && silentAudioRef.current.paused) {
+            silentAudioRef.current.play().catch(() => {});
+          }
         }
       }, 1000);
+    } else {
+      releaseWakeLock();
     }
     return () => clearInterval(progressIntervalRef.current);
   }, [isPlaying, hasInteracted, roomId]);
@@ -678,8 +744,8 @@ export default function Room() {
       <div style={{ position:'absolute', inset:'-20px', backgroundImage:`url(${currentTrack.albumArt})`, backgroundSize:'cover', backgroundPosition:'center', filter:'blur(70px) saturate(3) brightness(0.45)', zIndex:0 }} />
       {/* Color gradient overlay */}
       <div style={{ position:'absolute', inset:0, background:`linear-gradient(135deg, rgba(${dc},0.08) 0%, rgba(0,0,0,0.7) 100%)`, zIndex:1 }} />
-      {/* Bottom fade to #060612 */}
-      <div style={{ position:'absolute', bottom:0, left:0, right:0, height:'80px', background:'linear-gradient(to bottom, transparent, #060612)', zIndex:2 }} />
+      {/* Bottom fade to Spotify Dark */}
+      <div style={{ position:'absolute', bottom:0, left:0, right:0, height:'80px', background:'linear-gradient(to bottom, transparent, #121212)', zIndex:2 }} />
       {/* Floating aura orbs */}
       {isPlaying && [0,1,2].map(i => (
         <div key={i} className="aura" style={{ width:`${100+i*70}px`, height:`${100+i*70}px`, top:`${5+i*30}%`, left:`${10+i*30}%`, opacity:0.12, animationDelay:`${i*1.2}s`, background:`radial-gradient(circle, rgba(${dc},1) 0%, transparent 70%)`, zIndex:1 }} />
@@ -1117,7 +1183,7 @@ export default function Room() {
 
   const playerBarJSX = (
     <div style={{
-      background:'rgba(6,6,18,0.97)',
+      background:'rgba(18,18,18,0.98)',
       borderTop:'1px solid rgba(255,255,255,0.07)',
       backdropFilter:'blur(20px)',
       flexShrink:0,
@@ -1222,7 +1288,7 @@ export default function Room() {
 
   // ─── Main Room UI ─────────────────────────────────────────────────────────
   return (
-    <div style={{ position:'relative', height:'100dvh', width:'100vw', overflow:'hidden', backgroundColor:'#060612', color:'white' }}>
+    <div style={{ position:'relative', height:'100dvh', width:'100vw', overflow:'hidden', backgroundColor:'#121212', color:'white' }}>
       {/* ── BACKGROUND AUDIO HACK ── */}
       {/* Plays silence endlessly to hold the mobile OS background audio lock */}
       <audio 
@@ -1239,7 +1305,7 @@ export default function Room() {
       </div>
 
       {/* ── MAIN APP CONTENT (z-index 10 covering the player) ── */}
-      <div style={{ display:'flex', flexDirection:'column', height:'100%', width:'100%', position:'relative', zIndex:10, backgroundColor:'#060612' }}>
+      <div style={{ display:'flex', flexDirection:'column', height:'100%', width:'100%', position:'relative', zIndex:10, backgroundColor:'#121212' }}>
         {notifJSX}
         {confettiJSX}
         {reactionParticlesJSX}
@@ -1247,7 +1313,7 @@ export default function Room() {
         {dedicationModalJSX}
 
         {!hasInteracted ? (
-        <div className="grid-bg" style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', background:'#060612', padding:'20px' }}>
+        <div className="grid-bg" style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', background:'#121212', padding:'20px' }}>
           {/* Radial glow */}
           <div style={{ position:'absolute', width:'600px', height:'600px', borderRadius:'50%', background:'radial-gradient(circle, rgba(29,185,84,0.12) 0%, transparent 70%)', pointerEvents:'none' }} />
           <div className="glass" style={{ textAlign:'center', padding:'48px 40px', borderRadius:'24px', maxWidth:'420px', width:'100%', boxShadow:'0 32px 80px rgba(0,0,0,0.7)', border:'1px solid rgba(29,185,84,0.15)', position:'relative' }}>
@@ -1287,7 +1353,7 @@ export default function Room() {
         /* ── MOBILE LAYOUT ── */
         <>
           {/* Mobile Top Bar */}
-          <div style={{ background:'rgba(6,6,18,0.97)', padding:'10px 16px', display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0, borderBottom:'1px solid rgba(255,255,255,0.07)', backdropFilter:'blur(20px)' }}>
+          <div style={{ background:'rgba(18,18,18,0.98)', padding:'10px 16px', display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0, borderBottom:'1px solid rgba(255,255,255,0.07)', backdropFilter:'blur(20px)' }}>
             <div style={{ display:'flex', alignItems:'center', gap:'8px' }}>
               <Music color="#1DB954" size={20} />
               <span style={{ fontWeight:'800', fontSize:'17px' }}>YourJam</span>
@@ -1398,7 +1464,7 @@ export default function Room() {
             </div>
 
             {/* Center Area — hero + search/queue */}
-            <div className="grid-bg" style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden', background:'#060612' }}>
+            <div className="grid-bg" style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden', background:'#121212' }}>
               {heroJSX}
               <div style={{ flex:1, overflow:'hidden', display:'flex', flexDirection:'column', background:'rgba(6,6,18,0.9)' }}>
                 {searchPanelJSX}

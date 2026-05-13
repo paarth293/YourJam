@@ -1,0 +1,20 @@
+{
+  "name": "YourJam",
+  "short_name": "YourJam",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#060612",
+  "theme_color": "#1DB954",
+  "icons": [
+    {
+      "src": "/logo192.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "/logo512.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ]
+}
